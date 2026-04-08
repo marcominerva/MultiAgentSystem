@@ -1,3 +1,3 @@
 ﻿namespace AgentWithTools.Models;
 
-public record class ChatResponse(string ConversationId, string Response);
+public record class ChatResponse(string ConversationId, string Response, long TotalTokenCount);

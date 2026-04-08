@@ -197,8 +197,6 @@ app.MapPost("/api/chat", async Task<IResult> (HttpContext httpContext, ChatReque
 
     await store.SaveSessionAsync(agent, conversationId, session);
 
-    httpContext.Response.Headers["x-total-token-count"] = response.Usage?.TotalTokenCount.ToString();
-
     if (artifactStore.HasArtifacts)
     {
         // If a file was produced, return it as a download with the agent response in a header.
@@ -209,7 +207,7 @@ app.MapPost("/api/chat", async Task<IResult> (HttpContext httpContext, ChatReque
         return TypedResults.File(artifact.Content, artifact.ContentType, artifact.FileName);
     }
 
-    return TypedResults.Ok(new ChatResponse(conversationId, response.Text));
+    return TypedResults.Ok(new ChatResponse(conversationId, response.Text, response.Usage?.TotalTokenCount ?? 0));
 })
 .Produces<ChatResponse>();
 
