@@ -59,6 +59,33 @@ Application settings are defined in `appsettings.json` (or, for local overrides,
 
 > **Note**: `IncludedTables` and `ExcludedTables` are mutually exclusive. If `IncludedTables` contains any entry, `ExcludedTables` is ignored.
 
+## How the SQL Agent works
+
+When the orchestrator delegates a data question to the SQL Agent, the following steps are executed:
+
+1. **Table discovery** — A context provider (`SqlAgentContextProvider`) queries `INFORMATION_SCHEMA.TABLES` at the beginning of each turn and injects the list of available table names into the agent's prompt. The list is filtered according to the `IncludedTables` / `ExcludedTables` configuration.
+2. **Schema retrieval** — The agent calls `GetDatabaseSchemaAsync` with the candidate table names identified from the user's question. The tool queries `INFORMATION_SCHEMA.COLUMNS` and `sys.foreign_keys` to return column names, data types, nullability, and foreign key relationships.
+3. **Query generation** — Using the schema information, the agent generates a SQL `SELECT` query that answers the user's question.
+4. **Query execution** — The agent calls `ExecuteQueryAsync` with the generated query. Before execution, the tool validates that the query is read-only by stripping comments and checking for forbidden keywords (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `TRUNCATE`, etc.). If a forbidden keyword is detected, the call is rejected. Results are returned as a JSON array of objects.
+
+The agent is instructed to **always** retrieve the schema before generating a query, ensuring it works with the actual database structure rather than assumptions.
+
+## How file export works
+
+When a request involves file generation (e.g. *"export the products to Excel"*), the orchestrator chains the SQL Agent to retrieve data and then delegates to the Export Agent, which produces the file using the appropriate tool (`ExcelTools`, `WordTools`, or `PdfTools`).
+
+### Artifact flow
+
+File generation relies on a scoped artifact store that decouples tool execution from response handling:
+
+1. **`AgentArtifact`** — A record that represents a file produced by a tool, holding the file name, its binary content, and deriving the MIME content type from the file extension.
+2. **`AgentArtifactStore`** — A scoped, thread-safe store (backed by a `ConcurrentBag`) that collects artifacts produced during a single request. Each export tool pushes an `AgentArtifact` into the store after generating the file.
+3. **Endpoint response** — After `RunAsync` completes, the `/api/chat` endpoint inspects the store:
+   - **If artifacts are present**, the first artifact is returned as a binary file download. The agent's text response and the conversation ID are included in the `x-response` and `x-conversation-id` response headers respectively.
+   - **If no artifacts are present**, the agent's text response is returned as a standard JSON body.
+
+This design keeps the tools unaware of HTTP concerns, while giving the endpoint full control over how files are delivered to the client.
+
 ## Running the application
 
 ```bash
