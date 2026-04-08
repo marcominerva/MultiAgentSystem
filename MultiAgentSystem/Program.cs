@@ -23,7 +23,7 @@ builder.Services.AddHttpClient();
 var openAISettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(builder.Configuration, "AzureOpenAI")!;
 builder.Services.AddChatClient(_ =>
 {
-    // Endpoint must end with /openai/v1 for Azure OpenAI
+    // Endpoint must end with /openai/v1 for Azure OpenAI.
     var openAIClient = new OpenAIClient(new ApiKeyCredential(openAISettings.ApiKey), new()
     {
         Endpoint = new(openAISettings.Endpoint),
