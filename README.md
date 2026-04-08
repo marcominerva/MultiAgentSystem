@@ -107,4 +107,34 @@ With a JSON body:
 }
 ```
 
-The `conversationId` is optional on the first request and returned in the response to maintain conversation context across subsequent calls. A Swagger UI is available at the root URL for interactive testing.
+The `conversationId` is optional on the first request and returned in the response to maintain conversation context across subsequent calls.
+
+### Text response
+
+When the agent answers with plain text, the endpoint returns a JSON body:
+
+```json
+{
+    "conversationId": "a1b2c3d4e5f6...",
+    "response": "The most expensive product is ...",
+    "totalTokenCount": 1234
+}
+```
+
+| Field | Description |
+|---|---|
+| `conversationId` | The conversation identifier to pass in subsequent requests. |
+| `response` | The agent's text answer. |
+| `totalTokenCount` | Total tokens consumed by the request (prompt + completion). |
+
+### File response
+
+When the agent produces a file (Excel, Word, PDF), the HTTP response body contains the **binary file content** with the appropriate `Content-Type` and `Content-Disposition` headers. The agent's text message and conversation ID are returned in custom response headers:
+
+| Header | Description |
+|---|---|
+| `x-response` | The agent's text description of the generated file (URL-encoded). |
+| `x-conversation-id` | The conversation identifier to pass in subsequent requests. |
+| `x-total-token-count` | Total tokens consumed by the request (prompt + completion). |
+
+A Swagger UI is available at the root URL for interactive testing.

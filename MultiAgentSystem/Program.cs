@@ -202,6 +202,7 @@ app.MapPost("/api/chat", async Task<IResult> (HttpContext httpContext, ChatReque
         // If a file was produced, return it as a download with the agent response in a header.
         httpContext.Response.Headers["x-response"] = Uri.EscapeDataString(response.Text).Replace("%20", " ");
         httpContext.Response.Headers["x-conversation-id"] = conversationId;
+        httpContext.Response.Headers["x-token-count"] = (response.Usage?.TotalTokenCount ?? 0).ToString();
 
         var artifact = artifactStore.Artifacts[0];
         return TypedResults.File(artifact.Content, artifact.ContentType, artifact.FileName);
