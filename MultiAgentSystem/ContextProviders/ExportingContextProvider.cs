@@ -1,7 +1,7 @@
 ﻿using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
-namespace AgentWithTools.ContextProviders;
+namespace MultiAgentSystem.ContextProviders;
 
 public class ExportingContextProvider : MessageAIContextProvider
 {

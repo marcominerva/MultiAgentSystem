@@ -2,7 +2,7 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
-namespace AgentWithTools.Logging;
+namespace MultiAgentSystem.Logging;
 
 public static class AgentMiddlewares
 {

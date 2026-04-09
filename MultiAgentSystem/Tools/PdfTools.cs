@@ -1,11 +1,11 @@
 using System.ComponentModel;
-using AgentWithTools.AgentArtifacts;
+using MultiAgentSystem.AgentArtifacts;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using QuestPDF.Markdown;
 
-namespace AgentWithTools.Tools;
+namespace MultiAgentSystem.Tools;
 
 public sealed class PdfTools(IHttpClientFactory httpClientFactory, AgentArtifactStore artifactStore)
 {

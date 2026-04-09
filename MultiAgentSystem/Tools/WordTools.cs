@@ -1,8 +1,8 @@
 using System.ComponentModel;
-using AgentWithTools.AgentArtifacts;
+using MultiAgentSystem.AgentArtifacts;
 using DocSharp.Markdown;
 
-namespace AgentWithTools.Tools;
+namespace MultiAgentSystem.Tools;
 
 public sealed class WordTools(AgentArtifactStore artifactStore)
 {

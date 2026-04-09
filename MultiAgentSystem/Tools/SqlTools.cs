@@ -1,12 +1,12 @@
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using AgentWithTools.Settings;
+using MultiAgentSystem.Settings;
 using Dapper;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
-namespace AgentWithTools.Tools;
+namespace MultiAgentSystem.Tools;
 
 /// <summary>
 /// Provides tools for natural language to SQL query workflows.

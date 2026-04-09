@@ -1,11 +1,11 @@
-﻿using AgentWithTools.Settings;
+﻿using MultiAgentSystem.Settings;
 using Dapper;
 using Microsoft.Agents.AI;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 
-namespace AgentWithTools.ContextProviders;
+namespace MultiAgentSystem.ContextProviders;
 
 public class SqlAgentContextProvider(IOptions<SqlAgentSettings> options) : MessageAIContextProvider
 {

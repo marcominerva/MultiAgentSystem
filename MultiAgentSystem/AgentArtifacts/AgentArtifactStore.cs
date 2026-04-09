@@ -1,6 +1,6 @@
 ﻿using System.Collections.Concurrent;
 
-namespace AgentWithTools.AgentArtifacts;
+namespace MultiAgentSystem.AgentArtifacts;
 
 /// <summary>
 /// Scoped store that collects file artifacts produced by tool calls within a single request.

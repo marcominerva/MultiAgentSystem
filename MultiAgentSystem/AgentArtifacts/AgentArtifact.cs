@@ -1,6 +1,6 @@
 ﻿using MimeMapping;
 
-namespace AgentWithTools.AgentArtifacts;
+namespace MultiAgentSystem.AgentArtifacts;
 
 /// <summary>
 /// Represents a file artifact produced by a tool during an agent run.

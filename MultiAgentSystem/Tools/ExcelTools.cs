@@ -1,9 +1,9 @@
 using System.ComponentModel;
 using System.Globalization;
-using AgentWithTools.AgentArtifacts;
+using MultiAgentSystem.AgentArtifacts;
 using ClosedXML.Excel;
 
-namespace AgentWithTools.Tools;
+namespace MultiAgentSystem.Tools;
 
 public sealed class ExcelTools(AgentArtifactStore artifactStore)
 {

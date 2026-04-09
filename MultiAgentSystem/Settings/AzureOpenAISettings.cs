@@ -1,4 +1,4 @@
-﻿namespace AgentWithTools.Settings;
+﻿namespace MultiAgentSystem.Settings;
 
 public class AzureOpenAISettings
 {

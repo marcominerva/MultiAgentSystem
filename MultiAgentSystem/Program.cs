@@ -1,18 +1,18 @@
 ﻿using System.ClientModel;
 using System.ClientModel.Primitives;
-using AgentWithTools.AgentArtifacts;
-using AgentWithTools.ContextProviders;
-using AgentWithTools.Logging;
-using AgentWithTools.Models;
-using AgentWithTools.Settings;
-using AgentWithTools.Stores;
-using AgentWithTools.Tools;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Extensions.AI;
+using MultiAgentSystem.AgentArtifacts;
+using MultiAgentSystem.ContextProviders;
+using MultiAgentSystem.Logging;
+using MultiAgentSystem.Models;
+using MultiAgentSystem.Settings;
+using MultiAgentSystem.Stores;
+using MultiAgentSystem.Tools;
 using OpenAI;
 using TinyHelpers.AspNetCore.Extensions;
-using ChatResponse = AgentWithTools.Models.ChatResponse;
+using ChatResponse = MultiAgentSystem.Models.ChatResponse;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true);

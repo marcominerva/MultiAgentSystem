@@ -3,7 +3,7 @@ using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
 
-namespace AgentWithTools.Stores;
+namespace MultiAgentSystem.Stores;
 
 public class InMemorySessionStore : AgentSessionStore
 {

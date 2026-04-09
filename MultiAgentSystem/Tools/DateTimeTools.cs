@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel;
 
-namespace AgentWithTools.Tools;
+namespace MultiAgentSystem.Tools;
 
 public static class DateTimeTools
 {
