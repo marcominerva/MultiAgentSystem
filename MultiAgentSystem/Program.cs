@@ -80,15 +80,15 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
     {
         Id = "sql-agent",
         Name = "sql-agent",
-        Description = "Specialist agent for querying databases about suppliers, products, categories, and any related data",
+        Description = "Specialist agent for querying the database. Only use this tool when the user explicitly asks about suppliers, products, or categories stored in the database. Do not use for general knowledge questions.",
         ChatOptions = new()
         {
             Instructions = """
                 You are a SQL specialist agent. Your job is to:
                 1. You receive the list of available tables in the database from context. Based on the user's question, identify the candidate tables.
-                2. Call GetDatabaseSchemaAsync with the candidate table names to retrieve their columns, data types, and relationships.
+                2. Call GetDatabaseSchema with the candidate table names to retrieve their columns, data types, and relationships.
                 3. Using the schema information, generate a SQL SELECT query that answers the user's question.
-                4. Call ExecuteQueryAsync with the generated query and return the results.
+                4. Call ExecuteQuery with the generated query and return the results.
                 Only generate SELECT queries. Never modify, insert, or delete data.
                 Always call GetDatabaseSchemaAsync before generating a query.
                 After presenting results, STOP. Never append follow-up offers, suggestions, or prompts (e.g., "Let me know if...", "Would you like...", "I can also...", "If you want...", "If you need..."). End with the answer itself.
@@ -121,7 +121,7 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
                 """,
             Tools = [AIFunctionFactory.Create(services.GetRequiredService<ExcelTools>().GenerateExcel),
                 AIFunctionFactory.Create(services.GetRequiredService<WordTools>().GenerateWord),
-                AIFunctionFactory.Create(services.GetRequiredService<PdfTools>().GeneratePdf)]
+                AIFunctionFactory.Create(services.GetRequiredService<PdfTools>().GeneratePdfAsync)]
         },
         AIContextProviders = [services.GetRequiredService<ExportingContextProvider>()]
     },
