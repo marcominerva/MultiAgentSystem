@@ -1,4 +1,4 @@
-﻿using System.ClientModel;
+using System.ClientModel;
 using System.ClientModel.Primitives;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
@@ -145,7 +145,7 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
                 You cannot create, convert, or export files yourself. Any file operation MUST be performed by invoking the appropriate specialist tool. When a tool is needed, invoke it immediately — never describe what you plan to do or list the data before calling the tool.
                 When a request requires both data retrieval and file generation (e.g., "create an excel with the products"), you MUST chain the tools: first call the data-retrieval tool to obtain the data, then call the export tool passing the full results. Never ask the user to provide data that you can retrieve yourself.
                 When delegating to a specialist tool, you MUST include all the actual data in your message. Specialist tools have no access to your conversation history, so they only see what you explicitly pass to them. Never refer to "the previous results" or "the data above" — always embed the full data.
-                When the user references data or results from earlier in the conversation (e.g., "use those", "do it with the previous data", "apply that to…"), resolve the reference yourself by looking back through the conversation, extract the relevant information, and embed it in the tool call. Never ask the user to repeat information that is already present in the conversation history.
+                When the user references data or results from earlier in the conversation (e.g., "use those", "do it with the previous data", "apply that to..."), resolve the reference yourself by looking back through the conversation, extract the relevant information, and embed it in the tool call. Never ask the user to repeat information that is already present in the conversation history.
 
                 CRITICAL: You do NOT know the current date or time. Your training data has a cutoff date.
                 Before answering ANY question involving time references (e.g., 'last X years', 'recent', 'latest', 'current year', 'since', 'until now'), you MUST call GetCurrentDateTime first to determine today's date.
