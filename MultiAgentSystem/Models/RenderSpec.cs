@@ -9,8 +9,8 @@ namespace MultiAgentSystem.Models;
 /// </summary>
 public sealed class RenderColumn
 {
-    [Description("The JSON property name from the data source (e.g., 'productName', 'unitPrice').")]
-    public required string Field { get; init; }
+    [Description("The exact JSON property name from the data source. Use the column names returned in the 'columns' array of the query response (e.g., 'Name', 'UnitPrice', 'IsDiscontinued').")]
+    public required string Field { get; set; }
 
     [Description("The display header for this column. Defaults to the Field name if not specified.")]
     public string? Header { get; init; }

@@ -5,23 +5,92 @@ using System.Text.Json.Serialization;
 using ClosedXML.Excel;
 using MultiAgentSystem.AgentArtifacts;
 using MultiAgentSystem.Converters;
+using MultiAgentSystem.Extensions;
 using MultiAgentSystem.Models;
 using MultiAgentSystem.Stores;
 
 namespace MultiAgentSystem.Tools;
 
-public sealed class ExcelTools(AgentArtifactStore artifactStore, ContentStore contentStore)
+public sealed class ExcelTools(AgentArtifactStore artifactStore, TableContentStore tableContentStore)
 {
     [Description("""
-        Generates an Excel file (.xlsx) from tabular data with optional per-cell formatting.
-        Use when the user asks to create, export, or save data as an Excel spreadsheet.
+        Generates an Excel file (.xlsx).
+        If a contentId is provided, the tool reads ALL rows directly from the store — nothing is truncated. Provide columns and optional rules to control layout and conditional formatting.
+        If no contentId is provided, provide headers and rows with the data to include.
         """)]
     public string GenerateExcel(
         [Description("The file name without extension.")] string fileName,
         [Description("The name of the worksheet.")] string sheetName,
         [Description("A brief summary of the generated file content. Do not include download links or references to downloading the file.")] string description,
-        [Description("Column headers for the spreadsheet.")] ExcelCell[] headers,
-        [Description("Data rows for the spreadsheet.")] ExcelRow[] rows)
+        [Description("The Content ID of previously stored tabular data. When provided, the tool reads data from the store and 'headers'/'rows' are ignored.")] string? contentId = null,
+        [Description("Column definitions for content-based export: which fields to include, display headers, unconditional styles. Required when contentId is provided.")] RenderColumn[]? columns = null,
+        [Description("Optional conditional formatting rules for content-based export (e.g., highlight prices > 100 in red).")] ConditionalRule[]? rules = null,
+        [Description("Column headers. Used only when no contentId is provided.")] ExcelCell[]? headers = null,
+        [Description("Data rows. Used only when no contentId is provided.")] ExcelRow[]? rows = null)
+    {
+        if (!string.IsNullOrWhiteSpace(contentId))
+        {
+            return GenerateFromContentTable(contentId, fileName, sheetName, description, columns ?? [], rules);
+        }
+
+        return GenerateFromProvidedData(fileName, sheetName, description, headers ?? [], rows ?? []);
+    }
+
+    private string GenerateFromContentTable(string contentId, string fileName, string sheetName, string description, RenderColumn[] columns, ConditionalRule[]? rules)
+    {
+        var json = tableContentStore.Get(contentId)
+            ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
+
+        using var doc = JsonDocument.Parse(json);
+        columns = ColumnResolver.Resolve(doc.RootElement, columns);
+
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add(string.IsNullOrWhiteSpace(sheetName) ? "Sheet1" : sheetName);
+
+        for (var col = 0; col < columns.Length; col++)
+        {
+            var column = columns[col];
+            var cell = worksheet.Cell(1, col + 1);
+            cell.Value = column.Header ?? column.Field;
+            cell.Style.Font.Bold = true;
+
+            if (column.Style?.Align is { } headerAlign)
+            {
+                cell.Style.Alignment.Horizontal = ParseAlignment(headerAlign);
+            }
+        }
+
+        var rowIndex = 2;
+        foreach (var item in doc.RootElement.EnumerateArray())
+        {
+            for (var col = 0; col < columns.Length; col++)
+            {
+                var column = columns[col];
+                var cell = worksheet.Cell(rowIndex, col + 1);
+
+                if (item.TryGetPropertyIgnoreCase(column.Field, out var prop))
+                {
+                    SetCellValueFromJson(cell, prop);
+                }
+
+                var effectiveStyle = ResolveStyle(item, column, rules);
+                ApplyCellStyleFromSpec(cell, effectiveStyle);
+            }
+
+            rowIndex++;
+        }
+
+        worksheet.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+
+        artifactStore.Add(new($"{fileName}.xlsx", stream.ToArray()));
+
+        return description;
+    }
+
+    private string GenerateFromProvidedData(string fileName, string sheetName, string description, ExcelCell[] headers, ExcelRow[] rows)
     {
         using var workbook = new XLWorkbook();
         var worksheet = workbook.Worksheets.Add(string.IsNullOrWhiteSpace(sheetName) ? "Sheet1" : sheetName);
@@ -56,72 +125,6 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, ContentStore co
         return description;
     }
 
-    [Description("""
-        Generates an Excel file from previously stored structured data (e.g., query results) identified by a Content ID.
-        Use this instead of GenerateExcel when exporting tabular data that was produced by another tool.
-        The tool reads ALL data from the store — nothing is truncated.
-        """)]
-    public string GenerateExcelFromContent(
-        [Description("The Content ID of the stored data.")] string contentId,
-        [Description("The file name without extension.")] string fileName,
-        [Description("The name of the worksheet.")] string sheetName,
-        [Description("A brief summary of the generated file content. Do not include download links or references to downloading the file.")] string description,
-        [Description("Column definitions specifying which fields to include, display headers, and unconditional styles.")] RenderColumn[] columns,
-        [Description("Optional conditional formatting rules (e.g., highlight prices > 100 in red).")] ConditionalRule[]? rules = null)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(contentId);
-        ArgumentNullException.ThrowIfNull(columns);
-
-        var json = contentStore.Get(contentId)
-            ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
-
-        using var doc = JsonDocument.Parse(json);
-        using var workbook = new XLWorkbook();
-        var worksheet = workbook.Worksheets.Add(string.IsNullOrWhiteSpace(sheetName) ? "Sheet1" : sheetName);
-
-        for (var col = 0; col < columns.Length; col++)
-        {
-            var column = columns[col];
-            var cell = worksheet.Cell(1, col + 1);
-            cell.Value = column.Header ?? column.Field;
-            cell.Style.Font.Bold = true;
-
-            if (column.Style?.Align is { } headerAlign)
-            {
-                cell.Style.Alignment.Horizontal = ParseAlignment(headerAlign);
-            }
-        }
-
-        var rowIndex = 2;
-        foreach (var item in doc.RootElement.EnumerateArray())
-        {
-            for (var col = 0; col < columns.Length; col++)
-            {
-                var column = columns[col];
-                var cell = worksheet.Cell(rowIndex, col + 1);
-
-                if (item.TryGetProperty(column.Field, out var prop))
-                {
-                    SetCellValueFromJson(cell, prop);
-                }
-
-                var effectiveStyle = ResolveStyle(item, column, rules);
-                ApplyCellStyleFromSpec(cell, effectiveStyle);
-            }
-
-            rowIndex++;
-        }
-
-        worksheet.Columns().AdjustToContents();
-
-        using var stream = new MemoryStream();
-        workbook.SaveAs(stream);
-
-        artifactStore.Add(new($"{fileName}.xlsx", stream.ToArray()));
-
-        return description;
-    }
-
     private static CellStyle ResolveStyle(JsonElement row, RenderColumn column, ConditionalRule[]? rules)
     {
         var style = column.Style;
@@ -135,7 +138,7 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, ContentStore co
                     continue;
                 }
 
-                if (row.TryGetProperty(rule.Column, out var evalProp) && ConditionEvaluator.Evaluate(evalProp, rule))
+                if (row.TryGetPropertyIgnoreCase(rule.Column, out var evalProp) && ConditionEvaluator.Evaluate(evalProp, rule))
                 {
                     style = ConditionEvaluator.MergeStyles(style, rule.Style);
                 }
@@ -153,14 +156,18 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, ContentStore co
                 cell.Value = element.GetDouble();
                 cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
                 break;
+
             case JsonValueKind.True:
                 cell.Value = true;
                 break;
+
             case JsonValueKind.False:
                 cell.Value = false;
                 break;
+
             case JsonValueKind.String:
                 var str = element.GetString();
+
                 if (DateTime.TryParse(str, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
                 {
                     cell.Value = date;
@@ -177,6 +184,7 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, ContentStore co
                 }
 
                 break;
+
             default:
                 cell.Value = Blank.Value;
                 break;

@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using MultiAgentSystem.Extensions;
 using MultiAgentSystem.Models;
 
 namespace MultiAgentSystem.Tools;
@@ -18,6 +19,8 @@ internal static class MarkdownTableBuilder
     {
         using var doc = JsonDocument.Parse(json);
         var array = doc.RootElement;
+
+        columns = ColumnResolver.Resolve(array, columns);
 
         var sb = new StringBuilder();
 
@@ -69,7 +72,7 @@ internal static class MarkdownTableBuilder
             sb.Append('|');
             foreach (var column in columns)
             {
-                var value = item.TryGetProperty(column.Field, out var prop)
+                var value = item.TryGetPropertyIgnoreCase(column.Field, out var prop)
                     ? FormatJsonValue(prop)
                     : string.Empty;
 
@@ -99,7 +102,7 @@ internal static class MarkdownTableBuilder
                 continue;
             }
 
-            if (row.TryGetProperty(rule.Column, out var evalProp) && ConditionEvaluator.Evaluate(evalProp, rule))
+            if (row.TryGetPropertyIgnoreCase(rule.Column, out var evalProp) && ConditionEvaluator.Evaluate(evalProp, rule))
             {
                 style = ConditionEvaluator.MergeStyles(style, rule.Style);
             }

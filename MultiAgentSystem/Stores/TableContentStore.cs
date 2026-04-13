@@ -3,15 +3,15 @@ using System.Collections.Concurrent;
 namespace MultiAgentSystem.Stores;
 
 /// <summary>
-/// Scoped store that holds content produced by tool calls (e.g., query results, generated text)
-/// so that it can be reliably retrieved by other tools within the same request.
+/// Scoped store that holds tabular data produced by tool calls (e.g., query results as JSON arrays)
+/// so that export tools can render it deterministically without LLM-mediated data transfer.
 /// </summary>
 /// <remarks>
-/// This avoids passing large payloads through LLM-generated text, which is lossy.
+/// Only use for pure tabular data (JSON arrays of homogeneous objects).
 /// Producers call <see cref="Store"/> to save content and receive a short ID;
-/// consumers call <see cref="Get"/> with that ID to retrieve the full content.
+/// export tools call <see cref="Get"/> with that ID to retrieve the full dataset.
 /// </remarks>
-public sealed class ContentStore
+public sealed class TableContentStore
 {
     private readonly ConcurrentDictionary<string, string> contents = new();
 
@@ -22,7 +22,7 @@ public sealed class ContentStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(content);
 
-        var id = Guid.NewGuid().ToString("N");
+        var id = Guid.NewGuid().ToString("N")[..8];
         contents[id] = content;
 
         return id;

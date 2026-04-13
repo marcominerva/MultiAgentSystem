@@ -9,7 +9,7 @@ using QuestPDF.Markdown;
 
 namespace MultiAgentSystem.Tools;
 
-public sealed class PdfTools(IHttpClientFactory httpClientFactory, AgentArtifactStore artifactStore, ContentStore contentStore)
+public sealed class PdfTools(IHttpClientFactory httpClientFactory, AgentArtifactStore artifactStore, TableContentStore tableContentStore)
 {
     static PdfTools()
     {
@@ -17,17 +17,34 @@ public sealed class PdfTools(IHttpClientFactory httpClientFactory, AgentArtifact
     }
 
     [Description("""
-        Generates a PDF document (.pdf) from markdown content.
-        Use for narrative or free-form content such as stories, reports, or letters.
-        Do NOT use this for tabular data that has a Content ID — use GeneratePdfFromContent instead.
+        Generates a PDF document (.pdf).
+        If a contentId is provided, the tool reads ALL rows directly from the store and renders a formatted table — nothing is truncated. Provide columns and optional rules to control layout and conditional formatting.
+        If no contentId is provided, provide markdown content directly (for narrative text, stories, reports, or any free-form content).
         """)]
     public async Task<string> GeneratePdfAsync(
         [Description("The file name without extension.")] string fileName,
         [Description("A brief summary of the generated file content. Do not include download links or references to downloading the file.")] string description,
-        [Description("The markdown content of the file.")] string content)
+        [Description("The Content ID of previously stored tabular data. When provided, the tool reads data from the store and 'content' is ignored.")] string? contentId = null,
+        [Description("Column definitions for content-based export: which fields to include, display headers, unconditional styles. Required when contentId is provided.")] RenderColumn[]? columns = null,
+        [Description("Optional conditional formatting rules for content-based export (bold/italic only in PDF).")] ConditionalRule[]? rules = null,
+        [Description("Optional title displayed above the table when using contentId.")] string? title = null,
+        [Description("Markdown content for narrative/free-form documents. Used only when no contentId is provided.")] string? content = null)
     {
-        var markdown = ParsedMarkdownDocument.FromText(content);
-        await markdown.DownloadImages(httpClient: httpClientFactory.CreateClient());
+        string markdownContent;
+
+        if (!string.IsNullOrWhiteSpace(contentId))
+        {
+            var json = tableContentStore.Get(contentId)
+                ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
+
+            markdownContent = MarkdownTableBuilder.Build(json, title, columns ?? [], rules);
+        }
+        else
+        {
+            markdownContent = content ?? string.Empty;
+            var parsed = ParsedMarkdownDocument.FromText(markdownContent);
+            await parsed.DownloadImages(httpClient: httpClientFactory.CreateClient());
+        }
 
         var bytes = Document.Create(container =>
         {
@@ -35,44 +52,7 @@ public sealed class PdfTools(IHttpClientFactory httpClientFactory, AgentArtifact
             {
                 page.PageColor(Colors.White);
                 page.Margin(2, Unit.Centimetre);
-                page.Content().Markdown(content);
-            });
-        }).GeneratePdf();
-
-        artifactStore.Add(new($"{fileName}.pdf", bytes));
-
-        return description;
-    }
-
-    [Description("""
-        Generates a PDF document with a formatted table from previously stored structured data (e.g., query results) identified by a Content ID.
-        Use this instead of GeneratePdfAsync when exporting tabular data.
-        The tool reads ALL data from the store — nothing is truncated.
-        Bold and italic styles are applied via markdown. Colors are not supported in PDF tables.
-        """)]
-    public string GeneratePdfFromContent(
-        [Description("The Content ID of the stored data.")] string contentId,
-        [Description("The file name without extension.")] string fileName,
-        [Description("A brief summary of the generated file content. Do not include download links or references to downloading the file.")] string description,
-        [Description("Optional title displayed above the table.")] string? title,
-        [Description("Column definitions specifying which fields to include, display headers, and unconditional styles.")] RenderColumn[] columns,
-        [Description("Optional conditional formatting rules (bold/italic only in PDF).")] ConditionalRule[]? rules = null)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(contentId);
-        ArgumentNullException.ThrowIfNull(columns);
-
-        var json = contentStore.Get(contentId)
-            ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
-
-        var markdown = MarkdownTableBuilder.Build(json, title, columns, rules);
-
-        var bytes = Document.Create(container =>
-        {
-            container.Page(page =>
-            {
-                page.PageColor(Colors.White);
-                page.Margin(2, Unit.Centimetre);
-                page.Content().Markdown(markdown);
+                page.Content().Markdown(markdownContent);
             });
         }).GeneratePdf();
 

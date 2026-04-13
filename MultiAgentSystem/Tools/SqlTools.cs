@@ -1,18 +1,18 @@
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using MultiAgentSystem.Settings;
-using MultiAgentSystem.Stores;
 using Dapper;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
+using MultiAgentSystem.Settings;
+using MultiAgentSystem.Stores;
 
 namespace MultiAgentSystem.Tools;
 
 /// <summary>
 /// Provides tools for natural language to SQL query workflows.
 /// </summary>
-public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, ContentStore contentStore)
+public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, TableContentStore tableContentStore)
 {
 #pragma warning disable IDE0028 // Simplify collection initialization
     private static readonly HashSet<string> forbiddenKeywords = new(StringComparer.OrdinalIgnoreCase)
@@ -91,13 +91,11 @@ public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, Content
         var results = await connection.QueryAsync(new(sqlQuery, cancellationToken: cancellationToken));
         var json = JsonSerializer.Serialize(results, JsonSerializerOptions.Web);
 
-        var contentId = contentStore.Store(json);
+        var contentId = tableContentStore.Store(json);
 
         using var doc = JsonDocument.Parse(json);
         var array = doc.RootElement;
-        var columnNames = array.GetArrayLength() > 0
-            ? array[0].EnumerateObject().Select(p => p.Name)
-            : [];
+        var columnNames = array.GetArrayLength() > 0 ? array[0].EnumerateObject().Select(p => p.Name) : [];
 
         return JsonSerializer.Serialize(new
         {
