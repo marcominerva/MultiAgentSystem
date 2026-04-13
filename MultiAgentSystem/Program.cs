@@ -40,7 +40,9 @@ builder.Services.AddScoped<UserContextProvider>();
 builder.Services.AddScoped<ExportingContextProvider>();
 builder.Services.AddScoped<SqlAgentContextProvider>();
 
+builder.Services.AddSingleton<ContentStore>();
 builder.Services.AddScoped<AgentArtifactStore>();
+
 builder.Services.AddScoped<ExcelTools>();
 builder.Services.AddScoped<WordTools>();
 builder.Services.AddScoped<PdfTools>();
@@ -90,7 +92,8 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
                 3. Using the schema information, generate a SQL SELECT query that answers the user's question.
                 4. Call ExecuteQuery with the generated query and return the results.
                 Only generate SELECT queries. Never modify, insert, or delete data.
-                Always call GetDatabaseSchemaAsync before generating a query.
+                Always call GetDatabaseSchema before generating a query.
+                ExecuteQuery returns a JSON object with a "contentId", "rowCount", and "data" array. Always include the contentId in your response so other agents can retrieve the full dataset.
                 After presenting results, STOP. Never append follow-up offers, suggestions, or prompts (e.g., "Let me know if...", "Would you like...", "I can also...", "If you want...", "If you need..."). End with the answer itself.
                 """,
             Tools = [AIFunctionFactory.Create(services.GetRequiredService<SqlTools>().GetDatabaseSchemaAsync),
@@ -110,18 +113,20 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
         Description = "Specialist agent for exporting data to files in various formats such as Excel, Word and PDF",
         ChatOptions = new()
         {
+            MaxOutputTokens = 16_384,
             Instructions = """
-                You are an export specialist agent. Your job is to generate files from data provided to you.
-                Choose the appropriate export tool based on the user's requested format.
-                If the user does not specify a format, default to Excel.
-                Choose appropriate column headers, data types, and formatting.
-                IMPORTANT: Only use data that is explicitly provided in the message. Never generate, invent, or assume data. If no actual data is provided, ask for it instead of making it up.
+                You are an export specialist agent. Your job is to generate files.
+                Choose the appropriate tool based on the user's requested format. If not specified, default to Excel.
+                Apply any formatting or presentation instructions provided by the user.
                 When you generate a file, just briefly describe its content. Never mention that the file can be downloaded, never include download links or sandbox paths.
                 After presenting results, STOP. Never append follow-up offers, suggestions, or prompts (e.g., "Let me know if...", "Would you like...", "I can also...", "If you want...", "If you need..."). End with the answer itself.
                 """,
             Tools = [AIFunctionFactory.Create(services.GetRequiredService<ExcelTools>().GenerateExcel),
+                AIFunctionFactory.Create(services.GetRequiredService<ExcelTools>().GenerateExcelFromContent),
                 AIFunctionFactory.Create(services.GetRequiredService<WordTools>().GenerateWord),
-                AIFunctionFactory.Create(services.GetRequiredService<PdfTools>().GeneratePdfAsync)]
+                AIFunctionFactory.Create(services.GetRequiredService<WordTools>().GenerateWordFromContent),
+                AIFunctionFactory.Create(services.GetRequiredService<PdfTools>().GeneratePdfAsync),
+                AIFunctionFactory.Create(services.GetRequiredService<PdfTools>().GeneratePdfFromContent)]
         },
         AIContextProviders = [services.GetRequiredService<ExportingContextProvider>()]
     },
@@ -143,9 +148,9 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
                 Delegate seamlessly: never mention, narrate, or explain the use of specialist tools to the user.
 
                 You cannot create, convert, or export files yourself. Any file operation MUST be performed by invoking the appropriate specialist tool. When a tool is needed, invoke it immediately — never describe what you plan to do or list the data before calling the tool.
-                When a request requires both data retrieval and file generation (e.g., "create an excel with the products"), you MUST chain the tools: first call the data-retrieval tool to obtain the data, then call the export tool passing the full results. Never ask the user to provide data that you can retrieve yourself.
-                When delegating to a specialist tool, you MUST include all the actual data in your message. Specialist tools have no access to your conversation history, so they only see what you explicitly pass to them. Never refer to "the previous results" or "the data above" — always embed the full data.
-                When the user references data or results from earlier in the conversation (e.g., "use those", "do it with the previous data", "apply that to..."), resolve the reference yourself by looking back through the conversation, extract the relevant information, and embed it in the tool call. Never ask the user to repeat information that is already present in the conversation history.
+                When a request requires both data retrieval and file generation (e.g., "create an excel with the products"), you MUST chain the tools: first call the data-retrieval tool to obtain the data, then call the export tool.
+                IMPORTANT: When the data-retrieval tool returns a contentId, pass the contentId and any formatting or presentation instructions to the export tool. Do NOT copy or embed the raw data in your message — the export tool will retrieve it directly using the contentId.
+                When the user references data or results from earlier in the conversation (e.g., "use those", "do it with the previous data", "apply that to..."), resolve the reference yourself by looking back through the conversation, find the relevant contentId, and pass it to the export tool.
 
                 CRITICAL: You do NOT know the current date or time. Your training data has a cutoff date.
                 Before answering ANY question involving time references (e.g., 'last X years', 'recent', 'latest', 'current year', 'since', 'until now'), you MUST call GetCurrentDateTime first to determine today's date.
