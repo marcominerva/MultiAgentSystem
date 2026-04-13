@@ -12,14 +12,20 @@ internal static class ColumnResolver
 {
     /// <summary>
     /// Maps each column's <see cref="RenderColumn.Field"/> to the corresponding JSON property name.
-    /// Uses three passes: exact/case-insensitive/normalized match first, then positional fallback
+    /// When <paramref name="columns"/> is empty, generates a column for every property in the first JSON element.
+    /// Otherwise uses three passes: exact/case-insensitive/normalized match first, then positional fallback
     /// for any columns that still don't match.
     /// </summary>
     public static RenderColumn[] Resolve(JsonElement array, RenderColumn[] columns)
     {
-        if (array.GetArrayLength() == 0 || columns.Length == 0)
+        if (array.GetArrayLength() == 0)
         {
             return columns;
+        }
+
+        if (columns.Length == 0)
+        {
+            return [.. array[0].EnumerateObject().Select(p => new RenderColumn { Field = p.Name })];
         }
 
         var jsonProps = array[0].EnumerateObject().Select(p => p.Name).ToList();

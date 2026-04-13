@@ -115,7 +115,6 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
         Description = "Specialist agent for exporting data to files in various formats such as Excel, Word and PDF",
         ChatOptions = new()
         {
-            MaxOutputTokens = 16_384,
             Instructions = """
                 You are an export specialist agent. Your job is to generate files.
                 Choose the appropriate tool based on the user's requested format. If not specified, default to Excel.

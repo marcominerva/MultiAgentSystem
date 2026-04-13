@@ -3,7 +3,7 @@ using MultiAgentSystem.Models;
 namespace MultiAgentSystem.Stores;
 
 /// <summary>
-/// Store that holds content produced by tool calls so that export tools can
+/// Store that holds content produced by tool calls so that other tools can
 /// render it deterministically without LLM-mediated data transfer.
 /// </summary>
 /// <remarks>

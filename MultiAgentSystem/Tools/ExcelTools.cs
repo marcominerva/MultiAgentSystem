@@ -15,7 +15,7 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
 {
     [Description("""
         Generates an Excel file (.xlsx).
-        If a contentId is provided, the tool reads tabular data directly from the store — nothing is truncated. Provide columns and optional rules to control layout and conditional formatting.
+        If a contentId is provided, the tool reads tabular data directly from the store - nothing is truncated. Provide columns and optional rules to control layout and conditional formatting.
         Text content is not supported for Excel export.
         If no contentId is provided, provide headers and rows with the data to include.
         """)]
@@ -82,7 +82,7 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
                 var effectiveStyle = ResolveStyle(item, column, rules);
                 ApplyCellStyleFromSpec(cell, effectiveStyle);
 
-                // Column-level format takes precedence over style-level format.
+                // Column-level format is the default; conditional/style-level format takes precedence.
                 if (!string.IsNullOrWhiteSpace(column.Format) && string.IsNullOrWhiteSpace(effectiveStyle.Format))
                 {
                     cell.Style.NumberFormat.Format = column.Format;
@@ -213,7 +213,7 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
                 return;
         }
 
-        // No explicit type — infer from value content.
+        // No explicit type - infer from value content.
         if (DateTime.TryParse(str, CultureInfo.InvariantCulture, DateTimeStyles.None, out var inferredDate))
         {
             cell.Value = inferredDate;
