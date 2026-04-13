@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using Dapper;
 using Microsoft.Data.SqlClient;
@@ -12,24 +11,14 @@ namespace MultiAgentSystem.Tools;
 /// <summary>
 /// Provides tools for natural language to SQL query workflows.
 /// </summary>
-public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, InMemoryTableContentStore tableContentStore)
+public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, ITableContentStore tableContentStore)
 {
 #pragma warning disable IDE0028 // Simplify collection initialization
     private static readonly HashSet<string> forbiddenKeywords = new(StringComparer.OrdinalIgnoreCase)
 #pragma warning restore IDE0028 // Simplify collection initialization
     {
-        "INSERT",
-        "UPDATE",
-        "DELETE",
-        "DROP",
-        "ALTER",
-        "TRUNCATE",
-        "CREATE",
-        "EXEC",
-        "EXECUTE",
-        "MERGE",
-        "GRANT",
-        "REVOKE",
+        "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE",
+        "CREATE", "EXEC", "EXECUTE", "MERGE", "GRANT", "REVOKE",
         "DENY"
     };
 
@@ -75,8 +64,8 @@ public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, InMemor
         return new DatabaseSchema(columns, foreignKeys);
     }
 
-    [Description("Executes a read-only SQL SELECT query against the database. Returns a JSON object with a contentId for cross-agent data transfer, rowCount, and the full data array.")]
-    public async Task<string> ExecuteQueryAsync(
+    [Description("Executes a read-only SQL SELECT query against the database. Returns a result object with a contentId for cross-agent data transfer, rowCount, and the full data array.")]
+    public async Task<QueryResult> ExecuteQueryAsync(
         [Description("The SQL SELECT query to execute. Must not contain INSERT, UPDATE, DELETE, DROP, or any other data-modification statement.")] string sqlQuery, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sqlQuery);
@@ -88,22 +77,11 @@ public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, InMemor
 
         await using var connection = new SqlConnection(settings.ConnectionString);
 
-        var results = await connection.QueryAsync(new(sqlQuery, cancellationToken: cancellationToken));
+        var results = (await connection.QueryAsync(new(sqlQuery, cancellationToken: cancellationToken))).AsList();
+        var columnNames = results.Count > 0 ? ((IDictionary<string, object>)results[0]).Keys : [];
         var contentId = await tableContentStore.StoreAsync(results);
 
-        // Extract column names for metadata.
-        var json = await tableContentStore.GetAsync(contentId);
-        using var doc = JsonDocument.Parse(json!);
-        var array = doc.RootElement;
-        var columnNames = array.GetArrayLength() > 0 ? array[0].EnumerateObject().Select(p => p.Name) : [];
-
-        return JsonSerializer.Serialize(new
-        {
-            contentId,
-            rowCount = array.GetArrayLength(),
-            columns = columnNames,
-            data = array
-        }, JsonSerializerOptions.Web);
+        return new QueryResult(contentId, results.Count, columnNames, results);
     }
 
     private static bool IsReadOnlyQuery(string sql)
@@ -146,3 +124,16 @@ public record class ForeignKeySchema(string FkName, string FkTable, string FkCol
 /// <param name="Columns">The column definitions for the requested tables.</param>
 /// <param name="ForeignKeys">The foreign key relationships involving the requested tables.</param>
 public record class DatabaseSchema(IEnumerable<ColumnSchema> Columns, IEnumerable<ForeignKeySchema> ForeignKeys);
+
+/// <summary>
+/// Represents the result of a SQL query execution, including metadata and the full data array.
+/// </summary>
+/// <param name="ContentId">The Content ID for cross-agent data transfer. Export tools use this to retrieve the full dataset.</param>
+/// <param name="RowCount">The number of rows returned by the query.</param>
+/// <param name="Columns">The column names in the result set.</param>
+/// <param name="Data">The full data array returned by the query.</param>
+public record class QueryResult(
+    [property: Description("The Content ID for cross-agent data transfer. Export tools use this to retrieve the full dataset.")] string ContentId,
+    [property: Description("The number of rows returned by the query.")] int RowCount,
+    [property: Description("The column names in the result set.")] IEnumerable<string> Columns,
+    [property: Description("The full data array returned by the query.")] object Data);

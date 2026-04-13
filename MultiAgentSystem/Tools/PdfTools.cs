@@ -9,7 +9,7 @@ using QuestPDF.Markdown;
 
 namespace MultiAgentSystem.Tools;
 
-public sealed class PdfTools(IHttpClientFactory httpClientFactory, AgentArtifactStore artifactStore, InMemoryTableContentStore tableContentStore)
+public sealed class PdfTools(IHttpClientFactory httpClientFactory, AgentArtifactStore artifactStore, ITableContentStore tableContentStore)
 {
     static PdfTools()
     {

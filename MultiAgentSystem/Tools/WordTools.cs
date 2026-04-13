@@ -6,7 +6,7 @@ using MultiAgentSystem.Stores;
 
 namespace MultiAgentSystem.Tools;
 
-public sealed class WordTools(AgentArtifactStore artifactStore, InMemoryTableContentStore tableContentStore)
+public sealed class WordTools(AgentArtifactStore artifactStore, ITableContentStore tableContentStore)
 {
     [Description("""
         Generates a Word document (.docx).
