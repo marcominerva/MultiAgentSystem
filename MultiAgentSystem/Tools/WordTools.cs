@@ -1,19 +1,19 @@
 using System.ComponentModel;
+using DocSharp.Markdown;
 using MultiAgentSystem.AgentArtifacts;
 using MultiAgentSystem.Models;
 using MultiAgentSystem.Stores;
-using DocSharp.Markdown;
 
 namespace MultiAgentSystem.Tools;
 
-public sealed class WordTools(AgentArtifactStore artifactStore, TableContentStore tableContentStore)
+public sealed class WordTools(AgentArtifactStore artifactStore, InMemoryTableContentStore tableContentStore)
 {
     [Description("""
         Generates a Word document (.docx).
         If a contentId is provided, the tool reads ALL rows directly from the store and renders a formatted table — nothing is truncated. Provide columns and optional rules to control layout and conditional formatting.
         If no contentId is provided, provide markdown content directly (for narrative text, stories, reports, or any free-form content).
         """)]
-    public string GenerateWord(
+    public async Task<string> GenerateWordAsync(
         [Description("The file name without extension.")] string fileName,
         [Description("A brief summary of the generated file content. Do not include download links or references to downloading the file.")] string description,
         [Description("The Content ID of previously stored tabular data. When provided, the tool reads data from the store and 'content' is ignored.")] string? contentId = null,
@@ -23,7 +23,7 @@ public sealed class WordTools(AgentArtifactStore artifactStore, TableContentStor
         [Description("Markdown content for narrative/free-form documents. Used only when no contentId is provided.")] string? content = null)
     {
         var markdownContent = !string.IsNullOrWhiteSpace(contentId)
-            ? BuildFromContentTable(contentId, title, columns ?? [], rules)
+            ? await BuildFromContentTableAsync(contentId, title, columns ?? [], rules)
             : content ?? string.Empty;
 
         var markdown = MarkdownSource.FromMarkdownString(markdownContent);
@@ -36,9 +36,9 @@ public sealed class WordTools(AgentArtifactStore artifactStore, TableContentStor
         return description;
     }
 
-    private string BuildFromContentTable(string contentId, string? title, RenderColumn[] columns, ConditionalRule[]? rules)
+    private async Task<string> BuildFromContentTableAsync(string contentId, string? title, RenderColumn[] columns, ConditionalRule[]? rules)
     {
-        var json = tableContentStore.Get(contentId)
+        var json = await tableContentStore.GetAsync(contentId)
             ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
 
         return MarkdownTableBuilder.Build(json, title, columns, rules);

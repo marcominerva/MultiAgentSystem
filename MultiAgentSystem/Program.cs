@@ -40,7 +40,7 @@ builder.Services.AddScoped<UserContextProvider>();
 builder.Services.AddScoped<ExportingContextProvider>();
 builder.Services.AddScoped<SqlAgentContextProvider>();
 
-builder.Services.AddSingleton<TableContentStore>();
+builder.Services.AddSingleton<ITableContentStore, InMemoryTableContentStore>();
 builder.Services.AddScoped<AgentArtifactStore>();
 
 builder.Services.AddScoped<ExcelTools>();
@@ -123,8 +123,8 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
                 When you generate a file, just briefly describe its content. Never mention that the file can be downloaded, never include download links or sandbox paths.
                 After presenting results, STOP. Never append follow-up offers, suggestions, or prompts (e.g., "Let me know if...", "Would you like...", "I can also...", "If you want...", "If you need..."). End with the answer itself.
                 """,
-            Tools = [AIFunctionFactory.Create(services.GetRequiredService<ExcelTools>().GenerateExcel),
-                AIFunctionFactory.Create(services.GetRequiredService<WordTools>().GenerateWord),
+            Tools = [AIFunctionFactory.Create(services.GetRequiredService<ExcelTools>().GenerateExcelAsync),
+                AIFunctionFactory.Create(services.GetRequiredService<WordTools>().GenerateWordAsync),
                 AIFunctionFactory.Create(services.GetRequiredService<PdfTools>().GeneratePdfAsync)]
         },
         AIContextProviders = [services.GetRequiredService<ExportingContextProvider>()]

@@ -12,7 +12,7 @@ namespace MultiAgentSystem.Tools;
 /// <summary>
 /// Provides tools for natural language to SQL query workflows.
 /// </summary>
-public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, TableContentStore tableContentStore)
+public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, InMemoryTableContentStore tableContentStore)
 {
 #pragma warning disable IDE0028 // Simplify collection initialization
     private static readonly HashSet<string> forbiddenKeywords = new(StringComparer.OrdinalIgnoreCase)
@@ -89,11 +89,11 @@ public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, TableCo
         await using var connection = new SqlConnection(settings.ConnectionString);
 
         var results = await connection.QueryAsync(new(sqlQuery, cancellationToken: cancellationToken));
-        var json = JsonSerializer.Serialize(results, JsonSerializerOptions.Web);
+        var contentId = await tableContentStore.StoreAsync(results);
 
-        var contentId = tableContentStore.Store(json);
-
-        using var doc = JsonDocument.Parse(json);
+        // Extract column names for metadata.
+        var json = await tableContentStore.GetAsync(contentId);
+        using var doc = JsonDocument.Parse(json!);
         var array = doc.RootElement;
         var columnNames = array.GetArrayLength() > 0 ? array[0].EnumerateObject().Select(p => p.Name) : [];
 

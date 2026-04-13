@@ -9,7 +9,7 @@ using QuestPDF.Markdown;
 
 namespace MultiAgentSystem.Tools;
 
-public sealed class PdfTools(IHttpClientFactory httpClientFactory, AgentArtifactStore artifactStore, TableContentStore tableContentStore)
+public sealed class PdfTools(IHttpClientFactory httpClientFactory, AgentArtifactStore artifactStore, InMemoryTableContentStore tableContentStore)
 {
     static PdfTools()
     {
@@ -34,7 +34,7 @@ public sealed class PdfTools(IHttpClientFactory httpClientFactory, AgentArtifact
 
         if (!string.IsNullOrWhiteSpace(contentId))
         {
-            var json = tableContentStore.Get(contentId)
+            var json = await tableContentStore.GetAsync(contentId)
                 ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
 
             markdownContent = MarkdownTableBuilder.Build(json, title, columns ?? [], rules);

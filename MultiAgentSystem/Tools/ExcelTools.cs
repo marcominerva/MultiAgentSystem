@@ -11,14 +11,14 @@ using MultiAgentSystem.Stores;
 
 namespace MultiAgentSystem.Tools;
 
-public sealed class ExcelTools(AgentArtifactStore artifactStore, TableContentStore tableContentStore)
+public sealed class ExcelTools(AgentArtifactStore artifactStore, ITableContentStore tableContentStore)
 {
     [Description("""
         Generates an Excel file (.xlsx).
         If a contentId is provided, the tool reads ALL rows directly from the store — nothing is truncated. Provide columns and optional rules to control layout and conditional formatting.
         If no contentId is provided, provide headers and rows with the data to include.
         """)]
-    public string GenerateExcel(
+    public Task<string> GenerateExcelAsync(
         [Description("The file name without extension.")] string fileName,
         [Description("The name of the worksheet.")] string sheetName,
         [Description("A brief summary of the generated file content. Do not include download links or references to downloading the file.")] string description,
@@ -30,15 +30,15 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, TableContentSto
     {
         if (!string.IsNullOrWhiteSpace(contentId))
         {
-            return GenerateFromContentTable(contentId, fileName, sheetName, description, columns ?? [], rules);
+            return GenerateFromContentTableAsync(contentId, fileName, sheetName, description, columns ?? [], rules);
         }
 
-        return GenerateFromProvidedData(fileName, sheetName, description, headers ?? [], rows ?? []);
+        return Task.FromResult(GenerateFromProvidedData(fileName, sheetName, description, headers ?? [], rows ?? []));
     }
 
-    private string GenerateFromContentTable(string contentId, string fileName, string sheetName, string description, RenderColumn[] columns, ConditionalRule[]? rules)
+    private async Task<string> GenerateFromContentTableAsync(string contentId, string fileName, string sheetName, string description, RenderColumn[] columns, ConditionalRule[]? rules)
     {
-        var json = tableContentStore.Get(contentId)
+        var json = await tableContentStore.GetAsync(contentId)
             ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
 
         using var doc = JsonDocument.Parse(json);
