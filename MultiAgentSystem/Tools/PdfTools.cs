@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using MultiAgentSystem.AgentArtifacts;
+using MultiAgentSystem.Extensions;
 using MultiAgentSystem.Models;
 using MultiAgentSystem.Stores;
 using QuestPDF.Fluent;

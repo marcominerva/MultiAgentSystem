@@ -1,9 +1,9 @@
 using System.Text;
 using System.Text.Json;
-using MultiAgentSystem.Extensions;
 using MultiAgentSystem.Models;
+using MultiAgentSystem.Tools;
 
-namespace MultiAgentSystem.Tools;
+namespace MultiAgentSystem.Extensions;
 
 /// <summary>
 /// Builds a markdown table deterministically from JSON data and a render specification.

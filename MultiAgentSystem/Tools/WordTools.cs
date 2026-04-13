@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using DocSharp.Markdown;
 using MultiAgentSystem.AgentArtifacts;
+using MultiAgentSystem.Extensions;
 using MultiAgentSystem.Models;
 using MultiAgentSystem.Stores;
 
