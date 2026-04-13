@@ -1,34 +1,25 @@
 using System.ComponentModel;
-using System.Text.Json;
 using System.Text.RegularExpressions;
-using MultiAgentSystem.Settings;
 using Dapper;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
+using MultiAgentSystem.Models;
+using MultiAgentSystem.Settings;
+using MultiAgentSystem.Stores;
 
 namespace MultiAgentSystem.Tools;
 
 /// <summary>
 /// Provides tools for natural language to SQL query workflows.
 /// </summary>
-public sealed partial class SqlTools(IOptions<SqlAgentSettings> options)
+public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, IContentStore contentStore)
 {
 #pragma warning disable IDE0028 // Simplify collection initialization
     private static readonly HashSet<string> forbiddenKeywords = new(StringComparer.OrdinalIgnoreCase)
 #pragma warning restore IDE0028 // Simplify collection initialization
     {
-        "INSERT",
-        "UPDATE",
-        "DELETE",
-        "DROP",
-        "ALTER",
-        "TRUNCATE",
-        "CREATE",
-        "EXEC",
-        "EXECUTE",
-        "MERGE",
-        "GRANT",
-        "REVOKE",
+        "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE",
+        "CREATE", "EXEC", "EXECUTE", "MERGE", "GRANT", "REVOKE",
         "DENY"
     };
 
@@ -74,8 +65,8 @@ public sealed partial class SqlTools(IOptions<SqlAgentSettings> options)
         return new DatabaseSchema(columns, foreignKeys);
     }
 
-    [Description("Executes a read-only SQL SELECT query against the database and returns the results as a JSON array of objects.")]
-    public async Task<string> ExecuteQueryAsync(
+    [Description("Executes a read-only SQL SELECT query against the database. Returns a result object with a contentId for cross-agent data transfer, rowCount, and the full data array.")]
+    public async Task<ToolResult> ExecuteQueryAsync(
         [Description("The SQL SELECT query to execute. Must not contain INSERT, UPDATE, DELETE, DROP, or any other data-modification statement.")] string sqlQuery, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sqlQuery);
@@ -87,8 +78,13 @@ public sealed partial class SqlTools(IOptions<SqlAgentSettings> options)
 
         await using var connection = new SqlConnection(settings.ConnectionString);
 
-        var results = await connection.QueryAsync(new(sqlQuery, cancellationToken: cancellationToken));
-        return JsonSerializer.Serialize(results, JsonSerializerOptions.Web);
+        var results = (await connection.QueryAsync(new(sqlQuery, cancellationToken: cancellationToken))).AsList();
+        var columnNames = results.Count > 0 ? ((IDictionary<string, object>)results[0]).Keys : [];
+
+        var toolResult = new ToolResult(string.Empty, results.Count, columnNames, results);
+        var contentId = await contentStore.StoreAsync(toolResult);
+
+        return toolResult with { ContentId = contentId };
     }
 
     private static bool IsReadOnlyQuery(string sql)

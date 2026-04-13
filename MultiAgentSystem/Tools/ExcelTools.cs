@@ -1,22 +1,108 @@
 using System.ComponentModel;
 using System.Globalization;
-using MultiAgentSystem.AgentArtifacts;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using ClosedXML.Excel;
+using MultiAgentSystem.AgentArtifacts;
+using MultiAgentSystem.Converters;
+using MultiAgentSystem.Extensions;
+using MultiAgentSystem.Models;
+using MultiAgentSystem.Stores;
 
 namespace MultiAgentSystem.Tools;
 
-public sealed class ExcelTools(AgentArtifactStore artifactStore)
+public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore contentStore)
 {
     [Description("""
-        Generates an Excel file (.xlsx) from tabular data with optional per-cell formatting.
-        Use when the user asks to create, export, or save data as an Excel spreadsheet.
+        Generates an Excel file (.xlsx).
+        If a contentId is provided, the tool reads tabular data directly from the store — nothing is truncated. Provide columns and optional rules to control layout and conditional formatting.
+        Text content is not supported for Excel export.
+        If no contentId is provided, provide headers and rows with the data to include.
         """)]
-    public string GenerateExcel(
+    public Task<string> GenerateExcelAsync(
         [Description("The file name without extension.")] string fileName,
         [Description("The name of the worksheet.")] string sheetName,
         [Description("A brief summary of the generated file content. Do not include download links or references to downloading the file.")] string description,
-        [Description("Column headers for the spreadsheet.")] ExcelCell[] headers,
-        [Description("Data rows for the spreadsheet.")] ExcelRow[] rows)
+        [Description("The Content ID of previously stored tabular data. When provided, the tool reads data from the store and 'headers'/'rows' are ignored.")] string? contentId = null,
+        [Description("Column definitions for content-based export: which fields to include, display headers, unconditional styles. Required when contentId is provided.")] RenderColumn[]? columns = null,
+        [Description("Optional conditional formatting rules for content-based export (e.g., highlight prices > 100 in red).")] ConditionalRule[]? rules = null,
+        [Description("Column headers. Used only when no contentId is provided.")] ExcelCell[]? headers = null,
+        [Description("Data rows. Used only when no contentId is provided.")] ExcelRow[]? rows = null)
+    {
+        if (!string.IsNullOrWhiteSpace(contentId))
+        {
+            return GenerateFromContentTableAsync(contentId, fileName, sheetName, description, columns ?? [], rules);
+        }
+
+        return Task.FromResult(GenerateFromProvidedData(fileName, sheetName, description, headers ?? [], rows ?? []));
+    }
+
+    private async Task<string> GenerateFromContentTableAsync(string contentId, string fileName, string sheetName, string description, RenderColumn[] columns, ConditionalRule[]? rules)
+    {
+        var stored = await contentStore.GetAsync(contentId)
+            ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
+
+        if (stored.ContentType is not "table")
+        {
+            throw new NotSupportedException($"Excel export is only supported for tabular data. The content with ID '{contentId}' has type '{stored.ContentType}'.");
+        }
+
+        using var doc = JsonDocument.Parse((string)stored.Data);
+        columns = ColumnResolver.Resolve(doc.RootElement, columns);
+
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add(string.IsNullOrWhiteSpace(sheetName) ? "Sheet1" : sheetName);
+
+        for (var col = 0; col < columns.Length; col++)
+        {
+            var column = columns[col];
+            var cell = worksheet.Cell(1, col + 1);
+            cell.Value = column.Header ?? column.Field;
+            cell.Style.Font.Bold = true;
+
+            if (column.Style?.Align is { } headerAlign)
+            {
+                cell.Style.Alignment.Horizontal = ParseAlignment(headerAlign);
+            }
+        }
+
+        var rowIndex = 2;
+        foreach (var item in doc.RootElement.EnumerateArray())
+        {
+            for (var col = 0; col < columns.Length; col++)
+            {
+                var column = columns[col];
+                var cell = worksheet.Cell(rowIndex, col + 1);
+
+                if (item.TryGetPropertyIgnoreCase(column.Field, out var prop))
+                {
+                    SetCellValueFromJson(cell, prop, column.Type);
+                }
+
+                var effectiveStyle = ResolveStyle(item, column, rules);
+                ApplyCellStyleFromSpec(cell, effectiveStyle);
+
+                // Column-level format takes precedence over style-level format.
+                if (!string.IsNullOrWhiteSpace(column.Format) && string.IsNullOrWhiteSpace(effectiveStyle.Format))
+                {
+                    cell.Style.NumberFormat.Format = column.Format;
+                }
+            }
+
+            rowIndex++;
+        }
+
+        worksheet.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+
+        artifactStore.Add(new($"{fileName}.xlsx", stream.ToArray()));
+
+        return description;
+    }
+
+    private string GenerateFromProvidedData(string fileName, string sheetName, string description, ExcelCell[] headers, ExcelRow[] rows)
     {
         using var workbook = new XLWorkbook();
         var worksheet = workbook.Worksheets.Add(string.IsNullOrWhiteSpace(sheetName) ? "Sheet1" : sheetName);
@@ -50,6 +136,144 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore)
 
         return description;
     }
+
+    private static CellStyle ResolveStyle(JsonElement row, RenderColumn column, ConditionalRule[]? rules)
+    {
+        var style = column.Style;
+
+        if (rules is not null)
+        {
+            foreach (var rule in rules)
+            {
+                if (!string.Equals(rule.Column, column.Field, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (row.TryGetPropertyIgnoreCase(rule.Column, out var evalProp) && ConditionEvaluator.Evaluate(evalProp, rule))
+                {
+                    style = ConditionEvaluator.MergeStyles(style, rule.Style);
+                }
+            }
+        }
+
+        return style ?? new();
+    }
+
+    private static void SetCellValueFromJson(IXLCell cell, JsonElement element, string? type = null)
+    {
+        var normalizedType = type?.ToLowerInvariant();
+
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Number:
+                cell.Value = element.GetDouble();
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+                break;
+
+            case JsonValueKind.True:
+                cell.Value = true;
+                break;
+
+            case JsonValueKind.False:
+                cell.Value = false;
+                break;
+
+            case JsonValueKind.String:
+                SetCellValueFromString(cell, element.GetString(), normalizedType);
+                break;
+
+            default:
+                cell.Value = Blank.Value;
+                break;
+        }
+    }
+
+    private static void SetCellValueFromString(IXLCell cell, string? str, string? type)
+    {
+        switch (type)
+        {
+            case "number" or "currency" or "percentage" when double.TryParse(str, CultureInfo.InvariantCulture, out var num):
+                cell.Value = num;
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+                return;
+
+            case "date" when DateTime.TryParse(str, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date):
+                cell.Value = date;
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+                return;
+
+            case "time" when TimeSpan.TryParse(str, CultureInfo.InvariantCulture, out var time):
+                cell.Value = time;
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+                return;
+
+            case "boolean" when bool.TryParse(str, out var boolean):
+                cell.Value = boolean;
+                return;
+        }
+
+        // No explicit type — infer from value content.
+        if (DateTime.TryParse(str, CultureInfo.InvariantCulture, DateTimeStyles.None, out var inferredDate))
+        {
+            cell.Value = inferredDate;
+            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+        }
+        else if (double.TryParse(str, CultureInfo.InvariantCulture, out var inferredNum))
+        {
+            cell.Value = inferredNum;
+            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+        }
+        else
+        {
+            cell.Value = str;
+        }
+    }
+
+    private static void ApplyCellStyleFromSpec(IXLCell cell, CellStyle style)
+    {
+        if (style.Bold)
+        {
+            cell.Style.Font.Bold = true;
+        }
+
+        if (style.Italic)
+        {
+            cell.Style.Font.Italic = true;
+        }
+
+        if (style.ForegroundColor is { } fg)
+        {
+            ApplyColor(fg, color => cell.Style.Font.FontColor = color);
+        }
+
+        if (style.BackgroundColor is { } bg && !IsDefaultWhite(bg))
+        {
+            ApplyColor(bg, color =>
+            {
+                cell.Style.Fill.BackgroundColor = color;
+                cell.Style.Fill.PatternType = XLFillPatternValues.Solid;
+            });
+        }
+
+        if (style.Align is { } align)
+        {
+            cell.Style.Alignment.Horizontal = ParseAlignment(align);
+        }
+
+        if (!string.IsNullOrWhiteSpace(style.Format))
+        {
+            cell.Style.NumberFormat.Format = style.Format;
+        }
+    }
+
+    private static XLAlignmentHorizontalValues ParseAlignment(string align) => align.ToLowerInvariant() switch
+    {
+        "left" => XLAlignmentHorizontalValues.Left,
+        "center" => XLAlignmentHorizontalValues.Center,
+        "right" => XLAlignmentHorizontalValues.Right,
+        _ => XLAlignmentHorizontalValues.General
+    };
 
     private static void SetTypedCellValue(IXLCell cell, ExcelCell excelCell)
     {
@@ -156,6 +380,7 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore)
 public sealed class ExcelCell
 {
     [Description("The cell text value.")]
+    [JsonConverter(typeof(FlexibleStringConverter))]
     public string? Value { get; init; }
 
     [Description("Data type: 'text', 'number', 'date', 'time', 'boolean', 'percentage', or 'currency'.")]
