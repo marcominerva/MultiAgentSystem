@@ -40,7 +40,7 @@ builder.Services.AddScoped<UserContextProvider>();
 builder.Services.AddScoped<ExportingContextProvider>();
 builder.Services.AddScoped<SqlAgentContextProvider>();
 
-builder.Services.AddSingleton<ITableContentStore, InMemoryTableContentStore>();
+builder.Services.AddSingleton<IContentStore, InMemoryContentStore>();
 builder.Services.AddScoped<AgentArtifactStore>();
 
 builder.Services.AddScoped<ExcelTools>();
@@ -93,7 +93,9 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
                 4. Call ExecuteQuery with the generated query and return the results.
                 Only generate SELECT queries. Never modify, insert, or delete data.
                 Always call GetDatabaseSchema before generating a query.
-                ExecuteQuery returns a JSON object with a "contentId", "rowCount", and "data" array. Always include the contentId in your response so other agents can retrieve the full dataset.
+                ExecuteQuery returns a result object with "contentId", "contentType", "rowCount", "columns", and "data".
+                When presenting results to the user, always format the data as a readable markdown table showing ALL rows from the "data" array. Never summarize, truncate, or just describe the data — display it in full.
+                Always include the contentId at the end of your response (e.g., "ContentId: abc12345") so other agents can retrieve the full dataset for export.
                 After presenting results, STOP. Never append follow-up offers, suggestions, or prompts (e.g., "Let me know if...", "Would you like...", "I can also...", "If you want...", "If you need..."). End with the answer itself.
                 """,
             Tools = [AIFunctionFactory.Create(services.GetRequiredService<SqlTools>().GetDatabaseSchemaAsync),
@@ -117,7 +119,8 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
             Instructions = """
                 You are an export specialist agent. Your job is to generate files.
                 Choose the appropriate tool based on the user's requested format. If not specified, default to Excel.
-                When a contentId is provided, always pass it to the tool so it reads data directly from the store.
+                When a contentId is provided, always pass it to the tool so it reads data directly from the store. The store supports both tabular data and text/markdown content.
+                Excel export only supports tabular data. For text content, use Word or PDF instead.
                 Never fabricate, invent, or assume data. If no data is provided and no contentId is available, report the issue instead of making up data.
                 Apply any formatting or presentation instructions provided by the user.
                 When you generate a file, just briefly describe its content. Never mention that the file can be downloaded, never include download links or sandbox paths.

@@ -15,6 +15,17 @@ public sealed class RenderColumn
     [Description("The display header for this column. Defaults to the Field name if not specified.")]
     public string? Header { get; init; }
 
+    [Description("Data type: 'text', 'number', 'date', 'time', 'boolean', 'percentage', or 'currency'. Drives value parsing and default alignment in Excel. When set to 'currency' or 'percentage', also provide a Format string.")]
+    public string? Type { get; init; }
+
+    [Description("""
+        Excel number format string (e.g., '0.00', 'dd/MM/yyyy', '#,##0.00 €').
+        For currency values, determine the currency symbol from context or the user's language
+        (e.g., Italian -> '#,##0.00 €', English US -> '$#,##0.00').
+        Takes precedence over Style.Format when both are specified. Supported in Excel only.
+        """)]
+    public string? Format { get; init; }
+
     [Description("Unconditional style applied to every cell in this column (e.g., always bold).")]
     public CellStyle? Style { get; init; }
 }
