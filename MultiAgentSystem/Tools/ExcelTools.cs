@@ -232,6 +232,16 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
             cell.Style.Font.Italic = true;
         }
 
+        if (style.Underline)
+        {
+            cell.Style.Font.Underline = XLFontUnderlineValues.Single;
+        }
+
+        if (style.Size is { } size)
+        {
+            cell.Style.Font.FontSize = size;
+        }
+
         if (style.ForegroundColor is { } fg)
         {
             ApplyColor(fg, color => cell.Style.Font.FontColor = color);
