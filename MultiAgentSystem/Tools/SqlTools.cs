@@ -81,10 +81,10 @@ public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, IConten
         var results = (await connection.QueryAsync(new(sqlQuery, cancellationToken: cancellationToken))).AsList();
         var columnNames = results.Count > 0 ? ((IDictionary<string, object>)results[0]).Keys : [];
 
-        var toolResult = new ToolResult(string.Empty, results.Count, columnNames, results);
-        var contentId = await contentStore.StoreAsync(toolResult);
+        var toolResult = new ToolResult(results.Count, columnNames, results);
+        await contentStore.StoreAsync(toolResult);
 
-        return toolResult with { ContentId = contentId };
+        return toolResult;
     }
 
     private static bool IsReadOnlyQuery(string sql)

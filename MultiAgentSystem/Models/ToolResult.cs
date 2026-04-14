@@ -11,7 +11,7 @@ public record class ToolResult
     /// The Content ID for cross-agent data transfer. Tools use this value to retrieve the full dataset.
     /// </summary>
     [Description("The Content ID for cross-agent data transfer. Tools use this value to retrieve the full dataset.")]
-    public string ContentId { get; init; } = string.Empty;
+    public string ContentId { get; set; } = Guid.NewGuid().ToString("N")[..8];
 
     /// <summary>
     /// The type of content: <c>"table"</c> for tabular data or <c>"text"</c> for text/markdown content.
@@ -33,7 +33,7 @@ public record class ToolResult
 
     /// <summary>
     /// The result payload.
-    /// Contains the data array when <see cref="ContentType"/> is <c>"table"</c>,
+    /// Contains the JSON data array when <see cref="ContentType"/> is <c>"table"</c>,
     /// or the text/markdown content when <see cref="ContentType"/> is <c>"text"</c>.
     /// </summary>
     [Description("The result payload. Contains the data array when ContentType is 'table', or the text/markdown content when ContentType is 'text'.")]
@@ -42,9 +42,8 @@ public record class ToolResult
     /// <summary>
     /// Creates a tabular result with row count, column metadata, and the data array.
     /// </summary>
-    public ToolResult(string contentId, int rowCount, IEnumerable<string> columns, object data)
+    public ToolResult(int rowCount, IEnumerable<string> columns, object data)
     {
-        ContentId = contentId;
         ContentType = "table";
         RowCount = rowCount;
         Columns = columns;
@@ -54,9 +53,8 @@ public record class ToolResult
     /// <summary>
     /// Creates a text result containing free-form or markdown content.
     /// </summary>
-    public ToolResult(string contentId, object data)
+    public ToolResult(object data)
     {
-        ContentId = contentId;
         ContentType = "text";
         Data = data;
     }

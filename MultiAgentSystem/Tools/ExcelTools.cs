@@ -19,7 +19,7 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
         Text content is not supported for Excel export.
         If no contentId is provided, provide headers and rows with the data to include.
         """)]
-    public Task<string> GenerateExcelAsync(
+    public async Task<string> GenerateExcelAsync(
         [Description("The file name without extension.")] string fileName,
         [Description("The name of the worksheet.")] string sheetName,
         [Description("A brief summary of the generated file content. Do not include download links or references to downloading the file.")] string description,
@@ -29,15 +29,29 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
         [Description("Column headers. Used only when no contentId is provided.")] ExcelCell[]? headers = null,
         [Description("Data rows. Used only when no contentId is provided.")] ExcelRow[]? rows = null)
     {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add(string.IsNullOrWhiteSpace(sheetName) ? "Sheet1" : sheetName);
+
         if (!string.IsNullOrWhiteSpace(contentId))
         {
-            return GenerateFromContentTableAsync(contentId, fileName, sheetName, description, columns ?? [], rules);
+            await GenerateFromContentTableAsync(worksheet, contentId, columns ?? [], rules);
+        }
+        else
+        {
+            GenerateFromProvidedData(worksheet, headers ?? [], rows ?? []);
         }
 
-        return Task.FromResult(GenerateFromProvidedData(fileName, sheetName, description, headers ?? [], rows ?? []));
+        worksheet.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+
+        artifactStore.Add(new($"{fileName}.xlsx", stream.ToArray()));
+
+        return description;
     }
 
-    private async Task<string> GenerateFromContentTableAsync(string contentId, string fileName, string sheetName, string description, RenderColumn[] columns, ConditionalRule[]? rules)
+    private async Task GenerateFromContentTableAsync(IXLWorksheet worksheet, string contentId, RenderColumn[] columns, ConditionalRule[]? rules)
     {
         var stored = await contentStore.GetAsync(contentId)
             ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
@@ -49,9 +63,6 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
 
         using var doc = JsonDocument.Parse((string)stored.Data);
         columns = ColumnResolver.Resolve(doc.RootElement, columns);
-
-        using var workbook = new XLWorkbook();
-        var worksheet = workbook.Worksheets.Add(string.IsNullOrWhiteSpace(sheetName) ? "Sheet1" : sheetName);
 
         for (var col = 0; col < columns.Length; col++)
         {
@@ -91,22 +102,10 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
 
             rowIndex++;
         }
-
-        worksheet.Columns().AdjustToContents();
-
-        using var stream = new MemoryStream();
-        workbook.SaveAs(stream);
-
-        artifactStore.Add(new($"{fileName}.xlsx", stream.ToArray()));
-
-        return description;
     }
 
-    private string GenerateFromProvidedData(string fileName, string sheetName, string description, ExcelCell[] headers, ExcelRow[] rows)
+    private static void GenerateFromProvidedData(IXLWorksheet worksheet, ExcelCell[] headers, ExcelRow[] rows)
     {
-        using var workbook = new XLWorkbook();
-        var worksheet = workbook.Worksheets.Add(string.IsNullOrWhiteSpace(sheetName) ? "Sheet1" : sheetName);
-
         for (var col = 0; col < headers.Length; col++)
         {
             var headerCell = headers[col];
@@ -126,15 +125,6 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
                 ApplyFormatting(cell, dataCell);
             }
         }
-
-        worksheet.Columns().AdjustToContents();
-
-        using var stream = new MemoryStream();
-        workbook.SaveAs(stream);
-
-        artifactStore.Add(new($"{fileName}.xlsx", stream.ToArray()));
-
-        return description;
     }
 
     private static CellStyle ResolveStyle(JsonElement row, RenderColumn column, ConditionalRule[]? rules)
