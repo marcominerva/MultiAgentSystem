@@ -39,7 +39,7 @@ public sealed class RenderColumn
 /// To highlight prices between 50 and 100 in yellow:
 /// <c>{ Column = "unitPrice", Condition = "between", Threshold = "50", ThresholdEnd = "100", Style = { BackgroundColor = "#FFFF00" } }</c>
 /// </example>
-public sealed class ConditionalRule
+public sealed class CellRule
 {
     [Description("The JSON property name of the column whose value is evaluated and to which the style is applied.")]
     public required string Column { get; init; }
@@ -54,6 +54,27 @@ public sealed class ConditionalRule
     public string? ThresholdEnd { get; init; }
 
     [Description("The style to apply when the condition is true.")]
+    public required CellStyle Style { get; init; }
+}
+
+/// <summary>
+/// A rule that applies a style to entire rows based on their position (e.g., alternating row colors).
+/// </summary>
+/// <example>
+/// To apply alternating row colors (zebra stripes):
+/// <c>{ Condition = "even", Style = { BackgroundColor = "#D9E2F3" } }</c>
+/// To highlight every third row:
+/// <c>{ Condition = "every", Interval = 3, Style = { BackgroundColor = "#FFFF00" } }</c>
+/// </example>
+public sealed class RowRule
+{
+    [Description("Row condition: 'odd' (1st, 3rd, 5th data rows), 'even' (2nd, 4th, 6th data rows), or 'every' (every N-th row, requires Interval).")]
+    public required string Condition { get; init; }
+
+    [Description("Row interval for 'every' condition (e.g., 3 means every 3rd row). Required only when Condition is 'every'.")]
+    public int? Interval { get; init; }
+
+    [Description("The style to apply to all cells in matching rows. Row-level style has lower priority than cell-level or conditional styles.")]
     public required CellStyle Style { get; init; }
 }
 
@@ -92,7 +113,7 @@ public sealed class CellStyle
 }
 
 /// <summary>
-/// Evaluates <see cref="ConditionalRule"/> conditions against JSON element values
+/// Evaluates <see cref="CellRule"/> conditions against JSON element values
 /// and merges cell styles.
 /// </summary>
 public static class ConditionEvaluator
@@ -100,7 +121,7 @@ public static class ConditionEvaluator
     /// <summary>
     /// Evaluates a conditional rule against a JSON element value.
     /// </summary>
-    public static bool Evaluate(JsonElement element, ConditionalRule rule)
+    public static bool Evaluate(JsonElement element, CellRule rule)
     {
         return rule.Condition.ToLowerInvariant() switch
         {
@@ -168,10 +189,9 @@ public static class ConditionEvaluator
 
         // Fall back to date/time comparison so gt, gte, lt, lte work with ISO 8601 strings.
         if (DateTimeOffset.TryParse(threshold, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dateThreshold)
-            && element.ValueKind is JsonValueKind.String
-            && DateTimeOffset.TryParse(element.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var elementDate))
+            && element.ValueKind is JsonValueKind.String && DateTimeOffset.TryParse(element.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var elementDate))
         {
-            return comparison((double)elementDate.UtcTicks, (double)dateThreshold.UtcTicks);
+            return comparison(elementDate.UtcTicks, dateThreshold.UtcTicks);
         }
 
         return false;

@@ -15,7 +15,7 @@ internal static class MarkdownTableBuilder
     /// Builds a complete markdown document with an optional title and a table
     /// containing all rows from the JSON array, with formatting applied via markdown syntax.
     /// </summary>
-    public static string Build(string json, string? title, RenderColumn[] columns, ConditionalRule[]? rules)
+    public static string Build(string json, string? title, RenderColumn[] columns, CellRule[]? rules)
     {
         using var doc = JsonDocument.Parse(json);
         var array = doc.RootElement;
@@ -65,7 +65,7 @@ internal static class MarkdownTableBuilder
         sb.AppendLine();
     }
 
-    private static void AppendDataRows(StringBuilder sb, JsonElement array, RenderColumn[] columns, ConditionalRule[]? rules)
+    private static void AppendDataRows(StringBuilder sb, JsonElement array, RenderColumn[] columns, CellRule[]? rules)
     {
         foreach (var item in array.EnumerateArray())
         {
@@ -86,7 +86,7 @@ internal static class MarkdownTableBuilder
         }
     }
 
-    private static CellStyle ResolveStyle(JsonElement row, RenderColumn column, ConditionalRule[]? rules)
+    private static CellStyle ResolveStyle(JsonElement row, RenderColumn column, CellRule[]? rules)
     {
         var style = column.Style;
 

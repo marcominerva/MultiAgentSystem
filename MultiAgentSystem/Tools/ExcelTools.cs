@@ -25,7 +25,8 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
         [Description("A brief summary of the generated file content. Do not include download links or references to downloading the file.")] string description,
         [Description("The Content ID of previously stored tabular data. When provided, the tool reads data from the store and 'headers'/'rows' are ignored.")] string? contentId = null,
         [Description("Column definitions for content-based export: which fields to include, display headers, unconditional styles. Required when contentId is provided.")] RenderColumn[]? columns = null,
-        [Description("Optional conditional formatting rules for content-based export (e.g., highlight prices > 100 in red).")] ConditionalRule[]? rules = null,
+        [Description("Optional cell-level formatting rules for content-based export (e.g., highlight prices > 100 in red). Used only when contentId is provided.")] CellRule[]? rules = null,
+        [Description("Optional row-level styling rules (e.g., alternating row colors with 'odd'/'even', or every N-th row). Applied to all cells in matching rows with lower priority than cell-level styles. Used only when contentId is provided.")] RowRule[]? rowRules = null,
         [Description("Column headers. Used only when no contentId is provided.")] ExcelCell[]? headers = null,
         [Description("Data rows. Used only when no contentId is provided.")] ExcelRow[]? rows = null)
     {
@@ -34,7 +35,7 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
 
         if (!string.IsNullOrWhiteSpace(contentId))
         {
-            await GenerateFromContentTableAsync(worksheet, contentId, columns ?? [], rules);
+            await GenerateFromContentTableAsync(worksheet, contentId, columns ?? [], rules, rowRules);
         }
         else
         {
@@ -51,7 +52,7 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
         return description;
     }
 
-    private async Task GenerateFromContentTableAsync(IXLWorksheet worksheet, string contentId, RenderColumn[] columns, ConditionalRule[]? rules)
+    private async Task GenerateFromContentTableAsync(IXLWorksheet worksheet, string contentId, RenderColumn[] columns, CellRule[]? cellRules, RowRule[]? rowRules)
     {
         var stored = await contentStore.GetAsync(contentId)
             ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
@@ -80,6 +81,8 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
         var rowIndex = 2;
         foreach (var item in doc.RootElement.EnumerateArray())
         {
+            var dataRowNumber = rowIndex - 1; // 1-based data row number
+
             for (var col = 0; col < columns.Length; col++)
             {
                 var column = columns[col];
@@ -90,7 +93,7 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
                     SetCellValueFromJson(cell, prop, column.Type);
                 }
 
-                var effectiveStyle = ResolveStyle(item, column, rules);
+                var effectiveStyle = ResolveStyle(item, column, cellRules);
                 ApplyCellStyleFromSpec(cell, effectiveStyle);
 
                 // Column-level format is the default; conditional/style-level format takes precedence.
@@ -99,6 +102,8 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
                     cell.Style.NumberFormat.Format = column.Format;
                 }
             }
+
+            ApplyRowRules(worksheet, rowIndex, columns.Length, dataRowNumber, rowRules);
 
             rowIndex++;
         }
@@ -116,18 +121,32 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
 
         for (var row = 0; row < rows.Length; row++)
         {
-            var dataCells = rows[row].Cells;
+            var excelRow = rows[row];
+            var dataCells = excelRow.Cells;
+            var worksheetRow = row + 2;
+            var dataRowNumber = row + 1; // 1-based data row number
+
             for (var col = 0; col < dataCells.Length; col++)
             {
                 var dataCell = dataCells[col];
-                var cell = worksheet.Cell(row + 2, col + 1);
+                var cell = worksheet.Cell(worksheetRow, col + 1);
                 SetTypedCellValue(cell, dataCell);
                 ApplyFormatting(cell, dataCell);
+
+                // Row-level background color applies to all cells unless the cell has its own.
+                if (dataCell.BackgroundColor is null && excelRow.BackgroundColor is { } rowBg && !IsDefaultWhite(rowBg))
+                {
+                    ApplyColor(rowBg, color =>
+                    {
+                        cell.Style.Fill.BackgroundColor = color;
+                        cell.Style.Fill.PatternType = XLFillPatternValues.Solid;
+                    });
+                }
             }
         }
     }
 
-    private static CellStyle ResolveStyle(JsonElement row, RenderColumn column, ConditionalRule[]? rules)
+    private static CellStyle ResolveStyle(JsonElement row, RenderColumn column, CellRule[]? rules)
     {
         var style = column.Style;
 
@@ -148,6 +167,40 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
         }
 
         return style ?? new();
+    }
+
+    private static bool IsRowRuleMatch(RowRule rule, int dataRowNumber) => rule.Condition.ToLowerInvariant() switch
+    {
+        "odd" => dataRowNumber % 2 != 0,
+        "even" => dataRowNumber % 2 == 0,
+        "every" => rule.Interval is > 0 && dataRowNumber % rule.Interval == 0,
+        _ => false
+    };
+
+    private static void ApplyRowRules(IXLWorksheet worksheet, int worksheetRow, int columnCount, int dataRowNumber, RowRule[]? rowRules)
+    {
+        if (rowRules is null)
+        {
+            return;
+        }
+
+        foreach (var rule in rowRules)
+        {
+            if (!IsRowRuleMatch(rule, dataRowNumber))
+            {
+                continue;
+            }
+
+            for (var c = 1; c <= columnCount; c++)
+            {
+                var cell = worksheet.Cell(worksheetRow, c);
+                // Row rules have lowest priority: skip cells that already have explicit styling.
+                if (cell.Style.Fill.PatternType is not XLFillPatternValues.Solid)
+                {
+                    ApplyCellStyleFromSpec(cell, rule.Style);
+                }
+            }
+        }
     }
 
     private static void SetCellValueFromJson(IXLCell cell, JsonElement element, string? type = null)
@@ -419,4 +472,7 @@ public sealed class ExcelRow
 {
     [Description("The cells in this row.")]
     public required ExcelCell[] Cells { get; init; }
+
+    [Description("Background color for the entire row as a hex code (e.g., '#D9E2F3') or named color. Use this for alternating row colors instead of setting BackgroundColor on individual cells.")]
+    public string? BackgroundColor { get; init; }
 }
