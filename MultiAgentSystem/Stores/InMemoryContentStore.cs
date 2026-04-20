@@ -37,6 +37,10 @@ public sealed class InMemoryContentStore : IContentStore
     /// <inheritdoc/>
     public Task<ToolResult?> GetAsync(string contentId)
         => Task.FromResult(contents.GetValueOrDefault(contentId));
+
+    /// <inheritdoc/>
+    public Task<IEnumerable<ToolResult>> GetAllAsync()
+        => Task.FromResult<IEnumerable<ToolResult>>([.. contents.Values]);
 }
 
 /// <summary>
@@ -65,4 +69,9 @@ public interface IContentStore
     /// or <see langword="null"/> if the identifier is not found.
     /// </summary>
     Task<ToolResult?> GetAsync(string contentId);
+
+    /// <summary>
+    /// Asynchronously retrieves all tool results. This is necessary so that the LLM knows what content is available in the store and can reference it by ID, since the LLM doesn't have memory of previous interactions and can't be expected to know what content IDs exist.
+    /// </summary>
+    Task<IEnumerable<ToolResult>> GetAllAsync();
 }

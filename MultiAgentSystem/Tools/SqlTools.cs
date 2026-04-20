@@ -14,13 +14,10 @@ namespace MultiAgentSystem.Tools;
 /// </summary>
 public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, IContentStore contentStore)
 {
-#pragma warning disable IDE0028 // Simplify collection initialization
     private static readonly HashSet<string> forbiddenKeywords = new(StringComparer.OrdinalIgnoreCase)
-#pragma warning restore IDE0028 // Simplify collection initialization
     {
-        "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE",
-        "CREATE", "EXEC", "EXECUTE", "MERGE", "GRANT", "REVOKE",
-        "DENY"
+        "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE", "CREATE",
+        "EXEC", "EXECUTE", "MERGE", "GRANT", "REVOKE", "DENY"
     };
 
     private readonly SqlAgentSettings settings = options.Value;
@@ -67,7 +64,9 @@ public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, IConten
 
     [Description("Executes a read-only SQL SELECT query against the database. Returns a result object with a contentId for cross-agent data transfer, rowCount, and the full data array.")]
     public async Task<ToolResult> ExecuteQueryAsync(
-        [Description("The SQL SELECT query to execute. Must not contain INSERT, UPDATE, DELETE, DROP, or any other data-modification statement.")] string sqlQuery, CancellationToken cancellationToken = default)
+        [Description("The SQL SELECT query to execute. Must not contain INSERT, UPDATE, DELETE, DROP, or any other data-modification statement.")] string sqlQuery,
+        [Description("A brief description of the data or purpose of the query.")] string description,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sqlQuery);
 
@@ -81,7 +80,7 @@ public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, IConten
         var results = (await connection.QueryAsync(new(sqlQuery, cancellationToken: cancellationToken))).AsList();
         var columnNames = results.Count > 0 ? ((IDictionary<string, object>)results[0]).Keys : [];
 
-        var toolResult = new ToolResult(results.Count, columnNames, results);
+        var toolResult = new ToolResult(results, results.Count, columnNames, description);
         await contentStore.StoreAsync(toolResult);
 
         return toolResult;

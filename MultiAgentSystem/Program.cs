@@ -37,11 +37,14 @@ _ = builder.Services.ConfigureAndGet<SqlAgentSettings>(builder.Configuration, na
 
 // Register Context Providers as scoped, because they might have dependencies that are scoped, such as a DbContext for retrieving information from a database.
 builder.Services.AddScoped<UserContextProvider>();
-builder.Services.AddScoped<ExportingContextProvider>();
 builder.Services.AddScoped<SqlAgentContextProvider>();
+builder.Services.AddScoped<ExportingContextProvider>();
 
-builder.Services.AddSingleton<IContentStore, InMemoryContentStore>();
 builder.Services.AddScoped<AgentArtifactStore>();
+
+// Register the content store and its provider as singletons, so the stored content is shared across all sessions and conversations, and can be referenced by contentId over multiple turns and by different agents.
+builder.Services.AddSingleton<ContentStoreContextProvider>();
+builder.Services.AddSingleton<IContentStore, InMemoryContentStore>();
 
 builder.Services.AddScoped<ExcelTools>();
 builder.Services.AddScoped<WordTools>();
@@ -129,7 +132,8 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
                 AIFunctionFactory.Create(services.GetRequiredService<WordTools>().GenerateWordAsync),
                 AIFunctionFactory.Create(services.GetRequiredService<PdfTools>().GeneratePdfAsync)]
         },
-        AIContextProviders = [services.GetRequiredService<ExportingContextProvider>()]
+        AIContextProviders = [services.GetRequiredService<ExportingContextProvider>(),
+            services.GetRequiredService<ContentStoreContextProvider>()]
     },
     loggerFactory: loggerFactory,
     services: services)
