@@ -13,9 +13,9 @@ public class TraceHttpClientHandler : HttpClientHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        var requestString = await request.Content?.ReadAsStringAsync(cancellationToken)!;
-        PrintText($"Raw Request ({request.RequestUri})", ConsoleColor.Green);
+        var requestString = request.Content is null ? "(no request body)" : await request.Content.ReadAsStringAsync(cancellationToken);
 
+        PrintText($"Raw Request ({request.RequestUri})", ConsoleColor.Green);
         PrintText(FormatJson(requestString), ConsoleColor.DarkGray);
         PrintSeparator();
 
