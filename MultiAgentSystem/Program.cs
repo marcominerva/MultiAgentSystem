@@ -23,17 +23,20 @@ builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, relo
 builder.Services.AddHttpClient();
 
 var openAISettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(builder.Configuration, "AzureOpenAI")!;
+_ = builder.Services.ConfigureAndGet<SqlAgentSettings>(builder.Configuration, nameof(SqlAgentSettings))!;
 
-builder.Services.AddSingleton(_ =>
+builder.Services.AddHttpClient("OpenAI").AddHttpMessageHandler(_ => new TraceHttpClientHandler());
+
+builder.Services.AddChatClient(services =>
 {
     // Endpoint must end with /openai/v1 for Azure OpenAI.
     var openAIClient = new OpenAIClient(new ApiKeyCredential(openAISettings.ApiKey), new()
     {
         Endpoint = new(openAISettings.Endpoint),
-        Transport = new HttpClientPipelineTransport(new HttpClient(new TraceHttpClientHandler()))
+        Transport = new HttpClientPipelineTransport(services.GetRequiredService<IHttpClientFactory>().CreateClient("OpenAI"))
     });
 
-    return openAIClient;
+    return openAIClient.GetResponsesClient().AsIChatClientWithStoredOutputDisabled(openAISettings.Deployment);
 });
 
 builder.Services.AddChatClient(services =>
@@ -41,8 +44,6 @@ builder.Services.AddChatClient(services =>
     var openAIClient = services.GetRequiredService<OpenAIClient>();
     return openAIClient.GetResponsesClient().AsIChatClientWithStoredOutputDisabled(openAISettings.Deployment);
 });
-
-_ = builder.Services.ConfigureAndGet<SqlAgentSettings>(builder.Configuration, nameof(SqlAgentSettings))!;
 
 // Register Context Providers as scoped, because they might have dependencies that are scoped, such as a DbContext for retrieving information from a database.
 builder.Services.AddScoped<UserContextProvider>();

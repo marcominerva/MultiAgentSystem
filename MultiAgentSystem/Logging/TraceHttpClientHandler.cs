@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace MultiAgentSystem.Logging;
 
-public class TraceHttpClientHandler : HttpClientHandler
+public class TraceHttpClientHandler : DelegatingHandler
 {
     private static readonly JsonSerializerOptions jsonSerializerOptions = new()
     {
