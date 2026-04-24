@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace MultiAgentSystem.Logging;
 
-public class TraceHttpClientHandler : HttpClientHandler
+public class TraceHttpClientHandler : DelegatingHandler
 {
     private static readonly JsonSerializerOptions jsonSerializerOptions = new()
     {
@@ -20,6 +20,11 @@ public class TraceHttpClientHandler : HttpClientHandler
         PrintSeparator();
 
         var response = await base.SendAsync(request, cancellationToken);
+
+        //var responseString = await response.Content.ReadAsStringAsync(cancellationToken);
+        //PrintText("Raw Response", ConsoleColor.Green);
+        //PrintText(FormatJson(responseString), ConsoleColor.DarkGray);
+        //PrintSeparator();
 
         return response;
 

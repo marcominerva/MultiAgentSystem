@@ -11,6 +11,7 @@ using MultiAgentSystem.Settings;
 using MultiAgentSystem.Stores;
 using MultiAgentSystem.Tools;
 using OpenAI;
+using OpenAI.Responses;
 using TinyHelpers.AspNetCore.Extensions;
 using ChatResponse = MultiAgentSystem.Models.ChatResponse;
 
@@ -21,19 +22,21 @@ builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, relo
 builder.Services.AddHttpClient();
 
 var openAISettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(builder.Configuration, "AzureOpenAI")!;
-builder.Services.AddChatClient(_ =>
+_ = builder.Services.ConfigureAndGet<SqlAgentSettings>(builder.Configuration, nameof(SqlAgentSettings))!;
+
+builder.Services.AddHttpClient("OpenAI").AddHttpMessageHandler(_ => new TraceHttpClientHandler());
+
+builder.Services.AddChatClient(services =>
 {
     // Endpoint must end with /openai/v1 for Azure OpenAI.
     var openAIClient = new OpenAIClient(new ApiKeyCredential(openAISettings.ApiKey), new()
     {
         Endpoint = new(openAISettings.Endpoint),
-        Transport = new HttpClientPipelineTransport(new HttpClient(new TraceHttpClientHandler()))
+        Transport = new HttpClientPipelineTransport(services.GetRequiredService<IHttpClientFactory>().CreateClient("OpenAI"))
     });
 
-    return openAIClient.GetChatClient(openAISettings.Deployment).AsIChatClient();
+    return openAIClient.GetResponsesClient().AsIChatClientWithStoredOutputDisabled(openAISettings.Deployment);
 });
-
-_ = builder.Services.ConfigureAndGet<SqlAgentSettings>(builder.Configuration, nameof(SqlAgentSettings))!;
 
 // Register Context Providers as scoped, because they might have dependencies that are scoped, such as a DbContext for retrieving information from a database.
 builder.Services.AddScoped<UserContextProvider>();
@@ -97,7 +100,7 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
                 Only generate SELECT queries. Never modify, insert, or delete data.
                 Always call GetDatabaseSchema before generating a query.
                 ExecuteQuery returns a result object with "contentId", "contentType", "rowCount", "columns", and "data".
-                When presenting results to the user, always format the data as a readable markdown table showing ALL rows from the "data" array. Never summarize, truncate, or just describe the data — display it in full.
+                When presenting results to the user, always format the data as a readable markdown table.
                 Always include the contentId at the end of your response (e.g., "ContentId: abc12345") so other agents can retrieve the full dataset for export.
                 After presenting results, STOP. Never append follow-up offers, suggestions, or prompts (e.g., "Let me know if...", "Would you like...", "I can also...", "If you want...", "If you need..."). End with the answer itself.
                 """,
