@@ -3,6 +3,7 @@ using System.ClientModel.Primitives;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Extensions.AI;
+using MimeMapping;
 using MultiAgentSystem.AgentArtifacts;
 using MultiAgentSystem.ContextProviders;
 using MultiAgentSystem.Logging;
@@ -11,6 +12,7 @@ using MultiAgentSystem.Settings;
 using MultiAgentSystem.Stores;
 using MultiAgentSystem.Tools;
 using OpenAI;
+using OpenAI.Responses;
 using TinyHelpers.AspNetCore.Extensions;
 using ChatResponse = MultiAgentSystem.Models.ChatResponse;
 
@@ -21,7 +23,8 @@ builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, relo
 builder.Services.AddHttpClient();
 
 var openAISettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(builder.Configuration, "AzureOpenAI")!;
-builder.Services.AddChatClient(_ =>
+
+builder.Services.AddSingleton(_ =>
 {
     // Endpoint must end with /openai/v1 for Azure OpenAI.
     var openAIClient = new OpenAIClient(new ApiKeyCredential(openAISettings.ApiKey), new()
@@ -30,7 +33,13 @@ builder.Services.AddChatClient(_ =>
         Transport = new HttpClientPipelineTransport(new HttpClient(new TraceHttpClientHandler()))
     });
 
-    return openAIClient.GetChatClient(openAISettings.Deployment).AsIChatClient();
+    return openAIClient;
+});
+
+builder.Services.AddChatClient(services =>
+{
+    var openAIClient = services.GetRequiredService<OpenAIClient>();
+    return openAIClient.GetResponsesClient().AsIChatClientWithStoredOutputDisabled(openAISettings.Deployment);
 });
 
 _ = builder.Services.ConfigureAndGet<SqlAgentSettings>(builder.Configuration, nameof(SqlAgentSettings))!;
@@ -152,24 +161,20 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
                 You have access to specialist tools for specific domains. Use the tool whose description best matches the user's request.
                 Delegate seamlessly: never mention, narrate, or explain the use of specialist tools to the user.
 
-                You cannot create, convert, or export files yourself. Any file operation MUST be performed by invoking the appropriate specialist tool. When a tool is needed, invoke it immediately — never describe what you plan to do or list the data before calling the tool.
-                When a request requires both data retrieval and file generation (e.g., "create an excel with the products"), you MUST chain the tools: first call the data-retrieval tool to obtain the data, then call the export tool.
-                IMPORTANT: When the data-retrieval tool returns a contentId and the user wants to export the ENTIRE result set as-is (no filtering, no aggregation, no transformation), describe your request to the export tool as a plain text message — include the contentId, the exact column names from the 'columns' array in the query response, and any formatting or presentation instructions in natural language. Do NOT pass a JSON object; the query parameter must always be a plain text string.
-                However, if you have filtered, aggregated, or transformed the data (e.g., the user asked for orders > 100 but the query returned all orders), do NOT pass the contentId — include the filtered data directly in your message instead.
-                When the user references data or results from earlier in the conversation (e.g., "use those", "do it with the previous data", "apply that to..."), resolve the reference yourself by looking back through the conversation, find the relevant contentId, and pass it to the export tool.
+                When a request involves generating a file (e.g., Excel, CSV, Word, PDF), use the code interpreter tool to write and execute the code that produces the file. Invoke the code interpreter immediately — never describe what you plan to do before calling it.
+                When a request requires both data retrieval and file generation (e.g., "create an excel with the products"), first call the data-retrieval tool to obtain the data, then pass the full result set to the code interpreter to generate the file.
 
                 CRITICAL: You do NOT know the current date or time. Your training data has a cutoff date.
                 Before answering ANY question involving time references (e.g., 'last X years', 'recent', 'latest', 'current year', 'since', 'until now'), you MUST call GetCurrentDateTime first to determine today's date.
-                
+
                 Use UTC by default. Ask the user for their time zone only when exact local time is needed
                 (e.g., scheduling, alarms) and it is not already known.
 
                 After presenting results, STOP. Never append follow-up offers, suggestions, or prompts (e.g., "Let me know if...", "Would you like...", "I can also...", "If you want...", "If you need..."). End with the answer itself.
-                When you generate a file, just briefly describe its content. Never mention that the file can be downloaded, never include download links or sandbox paths.
                 """,
             Tools = [AIFunctionFactory.Create(DateTimeTools.GetCurrentDateTime),
                 sqlAgent.AsAIFunction(),
-                exportAgent.AsAIFunction()]
+                new HostedCodeInterpreterTool()]
         },
         AIContextProviders = [services.GetRequiredService<UserContextProvider>()],
         ChatHistoryProvider = chatHistoryProvider
@@ -199,7 +204,8 @@ app.UseSwaggerUI(options =>
     options.SwaggerEndpoint("/openapi/v1.json", app.Environment.ApplicationName);
 });
 
-app.MapPost("/api/chat", async Task<IResult> (HttpContext httpContext, ChatRequest request, [FromKeyedServices("MainAgent")] AIAgent agent, [FromKeyedServices("MainAgent")] AgentSessionStore store, AgentArtifactStore artifactStore) =>
+app.MapPost("/api/chat", async Task<IResult> (HttpContext httpContext, ChatRequest request, [FromKeyedServices("MainAgent")] AIAgent agent, [FromKeyedServices("MainAgent")] AgentSessionStore store, AgentArtifactStore artifactStore,
+    OpenAIClient openAIClient) =>
 {
     var conversationId = request.ConversationId ?? Guid.NewGuid().ToString("N");
     var session = await store.GetSessionAsync(agent, conversationId);
@@ -207,6 +213,22 @@ app.MapPost("/api/chat", async Task<IResult> (HttpContext httpContext, ChatReque
     var response = await agent.RunAsync(request.Message, session);
 
     await store.SaveSessionAsync(agent, conversationId, session);
+
+    foreach (var annotation in response.Messages.SelectMany(m => m.Contents).SelectMany(c => c.Annotations ?? []))
+    {
+        if (annotation.RawRepresentation is ContainerFileCitationMessageAnnotation containerFileCitation)
+        {
+            var containerClient = openAIClient.GetContainerClient();
+            var fileContent = await containerClient.DownloadContainerFileAsync(containerFileCitation.ContainerId, containerFileCitation.FileId);
+
+            // If a file was produced, return it as a download with the agent response in a header.
+            httpContext.Response.Headers["x-response"] = Uri.EscapeDataString(response.Text).Replace("%20", " ");
+            httpContext.Response.Headers["x-conversation-id"] = conversationId;
+            httpContext.Response.Headers["x-token-count"] = (response.Usage?.TotalTokenCount ?? 0).ToString();
+
+            return TypedResults.File(fileContent.Value.ToArray(), MimeUtility.GetMimeMapping(containerFileCitation.Filename), containerFileCitation.Filename);
+        }
+    }
 
     if (artifactStore.HasArtifacts)
     {
