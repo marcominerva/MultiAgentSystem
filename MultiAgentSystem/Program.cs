@@ -1,5 +1,8 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
+using System.Net.ServerSentEvents;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Extensions.AI;
@@ -48,6 +51,8 @@ builder.Services.AddScoped<SqlAgentContextProvider>();
 builder.Services.AddScoped<ExportingContextProvider>();
 
 builder.Services.AddScoped<AgentArtifactStore>();
+
+builder.Services.AddSingleton<ArtifactDownloadCache>();
 
 // Register the content store and its provider as singletons, so the stored content is shared across all sessions and conversations, and can be referenced by contentId over multiple turns and by different agents.
 builder.Services.AddSingleton<ContentStoreContextProvider>();
@@ -259,5 +264,43 @@ app.MapPost("/api/chat", async Task<IResult> (HttpContext httpContext, ChatReque
 })
 .Produces<ChatResponse>()
 .ProducesValidationProblem();
+
+app.MapPost("/api/chat/stream", (ChatRequest request, [FromKeyedServices("MainAgent")] AIAgent agent, [FromKeyedServices("MainAgent")] AgentSessionStore store, AgentArtifactStore artifactStore, ArtifactDownloadCache artifactCache, CancellationToken cancellationToken) =>
+{
+    async IAsyncEnumerable<SseItem<string>> StreamAsync([EnumeratorCancellation] CancellationToken ct)
+    {
+        var conversationId = request.ConversationId ?? Guid.NewGuid().ToString("N");
+        var session = await store.GetSessionAsync(agent, conversationId);
+
+        await foreach (var update in agent.RunStreamingAsync(request.Message, session, cancellationToken: ct))
+        {
+            if (!string.IsNullOrEmpty(update.Text))
+            {
+                yield return new SseItem<string>(update.Text, eventType: "delta");
+            }
+        }
+
+        await store.SaveSessionAsync(agent, conversationId, session);
+
+        string? artifactUrl = null;
+        if (artifactStore.HasArtifacts)
+        {
+            var artifactId = Guid.NewGuid().ToString("N");
+            artifactCache.Store(artifactId, artifactStore.Artifacts[0]);
+            artifactUrl = $"/api/artifact/{artifactId}";
+        }
+
+        var meta = JsonSerializer.Serialize(new { conversationId, artifactUrl }, JsonSerializerOptions.Web);
+        yield return new SseItem<string>(meta, eventType: "metadata");
+    }
+
+    return TypedResults.ServerSentEvents(StreamAsync(cancellationToken));
+});
+
+app.MapGet("/api/artifact/{id}", (string id, ArtifactDownloadCache artifactCache) =>
+{
+    var artifact = artifactCache.Get(id);
+    return artifact is null ? TypedResults.NotFound() : Results.File(artifact.Content, artifact.ContentType, artifact.FileName);
+});
 
 app.Run();
