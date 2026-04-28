@@ -1,3 +1,7 @@
+window.copyToClipboard = async (text) => {
+    await navigator.clipboard.writeText(text);
+};
+
 window.scrollToBottom = (element) => {
     if (element) {
         element.scrollTop = element.scrollHeight;

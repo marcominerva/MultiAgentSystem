@@ -204,3 +204,29 @@
         opacity: 0.4;
         cursor: default;
     }
+
+.message-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 6px;
+}
+
+.btn-copy {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    background: transparent;
+    color: #777;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: color 0.2s, background-color 0.2s;
+    padding: 0;
+}
+
+    .btn-copy:hover {
+        background-color: #ebebeb;
+        color: #555;
+    }

@@ -274,8 +274,11 @@ app.MapPost("/api/chat/stream", (ChatRequest request, [FromKeyedServices("MainAg
         var conversationId = request.ConversationId ?? Guid.NewGuid().ToString("N");
         var session = await store.GetSessionAsync(agent, conversationId, ct);
 
+        var updates = new List<AgentResponseUpdate>();
+
         await foreach (var update in agent.RunStreamingAsync(request.Message, session, cancellationToken: ct))
         {
+            updates.Add(update);
             if (!string.IsNullOrEmpty(update.Text))
             {
                 yield return new SseItem<string>(update.Text, eventType: "delta");
@@ -293,7 +296,8 @@ app.MapPost("/api/chat/stream", (ChatRequest request, [FromKeyedServices("MainAg
             artifactUrl = linkGenerator.GetUriByName(httpContext, "DownloadArtifact", new { id = artifactId });
         }
 
-        var meta = JsonSerializer.Serialize(new { conversationId, artifactUrl }, JsonSerializerOptions.Web);
+        var response = updates.ToAgentResponse();
+        var meta = JsonSerializer.Serialize(new { conversationId, artifactUrl, tokenCount = response.Usage?.TotalTokenCount }, JsonSerializerOptions.Web);
         yield return new SseItem<string>(meta, eventType: "metadata");
     }
 

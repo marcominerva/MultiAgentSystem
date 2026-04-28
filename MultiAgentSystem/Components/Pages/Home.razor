@@ -13,12 +13,31 @@
 
 <div class="chat-container">
     <div class="chat-messages" @ref="messagesContainer">
-        @foreach (var message in messages)
+        @foreach (var (index, message) in messages.Index()))
         {
             <div class="message @(message.IsUser ? "message-user" : "message-assistant")">
                 @if (!message.IsUser)
                 {
-                    <div class="message-bubble">@((MarkupString)FormatMessage(message.Text))</div>
+                    <div class="message-bubble">
+                        @((MarkupString)FormatMessage(message.Text))
+                        <div class="message-actions">
+                            <button class="btn-copy" title="Copy" @onclick="() => CopyMessageAsync(message.Text, index)">
+                                @if (copiedMessageIndex == index)
+                                {
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                                        <polyline points="20 6 9 17 4 12"/>
+                                    </svg>
+                                }
+                                else
+                                {
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                    </svg>
+                                }
+                            </button>
+                        </div>
+                    </div>
                 }
                 else
                 {
@@ -65,6 +84,7 @@
 
 @code {
     private sealed record ChatMessage(string Text, bool IsUser);
+    private sealed record StreamMetadata(string ConversationId, int TokenCount, string? ArtifactUrl);
 
     private readonly List<ChatMessage> messages = [];
     private string inputText = string.Empty;
@@ -73,6 +93,7 @@
     private string conversationId = Guid.NewGuid().ToString("N");
     private ElementReference messagesContainer;
     private ElementReference inputElement;
+    private int? copiedMessageIndex;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -180,6 +201,7 @@
             isStreaming = false;
 
             StateHasChanged();
+
             await ScrollToBottomAsync();
             await FocusInputAsync();
         }
@@ -194,10 +216,22 @@
         catch { /* ignore */ }
     }
 
+    private async Task CopyMessageAsync(string text, int index)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("copyToClipboard", text);
+            copiedMessageIndex = index;
+            StateHasChanged();
+            await Task.Delay(2000);
+            copiedMessageIndex = null;
+            StateHasChanged();
+        }
+        catch { /* ignore */ }
+    }
+
     private static readonly MarkdownPipeline markdownPipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
 
     private static string FormatMessage(string text)
-        => string.IsNullOrEmpty(text) ? string.Empty : Markdown.ToHtml(text, markdownPipeline);    
-
-    private sealed record StreamMetadata(string ConversationId, int TokenCount, string? ArtifactUrl);
+        => string.IsNullOrEmpty(text) ? string.Empty : Markdown.ToHtml(text, markdownPipeline);
 }
