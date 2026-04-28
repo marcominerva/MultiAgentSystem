@@ -270,7 +270,7 @@ app.MapPost("/api/chat/stream", (ChatRequest request, [FromKeyedServices("MainAg
     async IAsyncEnumerable<SseItem<string>> StreamAsync([EnumeratorCancellation] CancellationToken ct)
     {
         var conversationId = request.ConversationId ?? Guid.NewGuid().ToString("N");
-        var session = await store.GetSessionAsync(agent, conversationId);
+        var session = await store.GetSessionAsync(agent, conversationId, ct);
 
         await foreach (var update in agent.RunStreamingAsync(request.Message, session, cancellationToken: ct))
         {
@@ -280,7 +280,7 @@ app.MapPost("/api/chat/stream", (ChatRequest request, [FromKeyedServices("MainAg
             }
         }
 
-        await store.SaveSessionAsync(agent, conversationId, session);
+        await store.SaveSessionAsync(agent, conversationId, session, ct);
 
         string? artifactUrl = null;
         if (artifactStore.HasArtifacts)
