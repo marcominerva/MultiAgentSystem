@@ -4,7 +4,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using ClosedXML.Excel;
 using MultiAgentSystem.AgentArtifacts;
-using MultiAgentSystem.Converters;
 using MultiAgentSystem.Extensions;
 using MultiAgentSystem.Models;
 using MultiAgentSystem.Stores;
@@ -475,4 +474,23 @@ public sealed class ExcelRow
 
     [Description("Background color for the entire row as a hex code (e.g., '#D9E2F3') or named color. Use this for alternating row colors instead of setting BackgroundColor on individual cells.")]
     public string? BackgroundColor { get; init; }
+}
+
+public sealed class FlexibleStringConverter : JsonConverter<string?>
+{
+    public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return reader.TokenType switch
+        {
+            JsonTokenType.Null => null,
+            JsonTokenType.String => reader.GetString(),
+            JsonTokenType.True => "true",
+            JsonTokenType.False => "false",
+            JsonTokenType.Number or JsonTokenType.StartObject or JsonTokenType.StartArray
+                => JsonElement.ParseValue(ref reader).GetRawText(),
+            _ => reader.GetString()
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options) => writer.WriteStringValue(value);
 }
