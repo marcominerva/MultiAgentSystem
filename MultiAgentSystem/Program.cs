@@ -4,7 +4,9 @@ using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Extensions.AI;
 using MultiAgentSystem.AgentArtifacts;
+using MultiAgentSystem.Components;
 using MultiAgentSystem.ContextProviders;
+using MultiAgentSystem.Extensions;
 using MultiAgentSystem.Logging;
 using MultiAgentSystem.Models;
 using MultiAgentSystem.Settings;
@@ -19,6 +21,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true);
 
 // Add services to the container.
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+
 builder.Services.AddHttpClient();
 
 var openAISettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(builder.Configuration, "AzureOpenAI")!;
@@ -189,6 +193,9 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
     return new InMemorySessionStore();
 });
 
+builder.Services.AddDefaultProblemDetails();
+builder.Services.AddDefaultExceptionHandler();
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -196,11 +203,36 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 app.UseHttpsRedirection();
 
+app.UseWhen(context => context.IsWebRequest, builder =>
+{
+    if (!app.Environment.IsDevelopment())
+    {
+        app.UseExceptionHandler("/Error", createScopeForErrors: true);
+
+        // The default HSTS value is 30 days.
+        app.UseHsts();
+    }
+
+    app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+
+});
+
+app.UseWhen(context => context.IsApiRequest, builder =>
+{
+    app.UseExceptionHandler();
+    builder.UseStatusCodePages();
+});
+
 app.MapOpenApi();
 app.UseSwaggerUI(options =>
 {
     options.SwaggerEndpoint("/openapi/v1.json", app.Environment.ApplicationName);
 });
+
+app.UseAntiforgery();
+
+app.MapStaticAssets();
+app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.MapPost("/api/chat", async Task<IResult> (HttpContext httpContext, ChatRequest request, [FromKeyedServices("MainAgent")] AIAgent agent, [FromKeyedServices("MainAgent")] AgentSessionStore store, AgentArtifactStore artifactStore) =>
 {
