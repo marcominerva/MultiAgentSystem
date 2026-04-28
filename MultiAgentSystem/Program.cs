@@ -193,6 +193,7 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
     return new InMemorySessionStore();
 });
 
+builder.Services.AddValidation();
 builder.Services.AddDefaultProblemDetails();
 builder.Services.AddDefaultExceptionHandler();
 
@@ -256,6 +257,7 @@ app.MapPost("/api/chat", async Task<IResult> (HttpContext httpContext, ChatReque
 
     return TypedResults.Ok(new ChatResponse(conversationId, response.Text, response.Usage?.TotalTokenCount ?? 0));
 })
-.Produces<ChatResponse>();
+.Produces<ChatResponse>()
+.ProducesValidationProblem();
 
 app.Run();

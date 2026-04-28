@@ -1,3 +1,5 @@
-﻿namespace MultiAgentSystem.Models;
+﻿using System.ComponentModel.DataAnnotations;
 
-public record class ChatRequest(string? ConversationId, string Message);
+namespace MultiAgentSystem.Models;
+
+public record class ChatRequest(string? ConversationId, [Required] string Message);
