@@ -120,8 +120,10 @@
         messages.Add(new ChatMessage(text, true));
         isStreaming = true;
         streamingText = string.Empty;
+
         StateHasChanged();
-       
+
+        await Task.Yield();
         await ScrollToBottomAsync();
 
         try

@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.AI;
 using MultiAgentSystem.AgentArtifacts;
 using MultiAgentSystem.Components;
@@ -251,7 +252,7 @@ app.MapPost("/api/chat", async Task<IResult> (HttpContext httpContext, ChatReque
 
     if (artifactStore.HasArtifacts)
     {
-        // If a file was produced, return it as a download with the agent response in a header.
+        // If an Artifact was produced, returns it as a download with the agent response in a header.
         httpContext.Response.Headers["x-response"] = Uri.EscapeDataString(response.Text).Replace("%20", " ");
         httpContext.Response.Headers["x-conversation-id"] = conversationId;
         httpContext.Response.Headers["x-token-count"] = (response.Usage?.TotalTokenCount ?? 0).ToString();
@@ -265,7 +266,8 @@ app.MapPost("/api/chat", async Task<IResult> (HttpContext httpContext, ChatReque
 .Produces<ChatResponse>()
 .ProducesValidationProblem();
 
-app.MapPost("/api/chat/stream", (ChatRequest request, [FromKeyedServices("MainAgent")] AIAgent agent, [FromKeyedServices("MainAgent")] AgentSessionStore store, AgentArtifactStore artifactStore, ArtifactDownloadCache artifactCache, CancellationToken cancellationToken) =>
+app.MapPost("/api/chat/stream", (ChatRequest request, [FromKeyedServices("MainAgent")] AIAgent agent, [FromKeyedServices("MainAgent")] AgentSessionStore store,
+    AgentArtifactStore artifactStore, ArtifactDownloadCache artifactCache, LinkGenerator linkGenerator, HttpContext httpContext, CancellationToken cancellationToken) =>
 {
     async IAsyncEnumerable<SseItem<string>> StreamAsync([EnumeratorCancellation] CancellationToken ct)
     {
@@ -285,9 +287,10 @@ app.MapPost("/api/chat/stream", (ChatRequest request, [FromKeyedServices("MainAg
         string? artifactUrl = null;
         if (artifactStore.HasArtifacts)
         {
+            // If an Artifact was produced, store it in the cache and return the URL in a separate metadata event, so the client can download it with a separate request.
             var artifactId = Guid.NewGuid().ToString("N");
             artifactCache.Store(artifactId, artifactStore.Artifacts[0]);
-            artifactUrl = $"/api/artifact/{artifactId}";
+            artifactUrl = linkGenerator.GetUriByName(httpContext, "DownloadArtifact", new { id = artifactId });
         }
 
         var meta = JsonSerializer.Serialize(new { conversationId, artifactUrl }, JsonSerializerOptions.Web);
@@ -297,10 +300,13 @@ app.MapPost("/api/chat/stream", (ChatRequest request, [FromKeyedServices("MainAg
     return TypedResults.ServerSentEvents(StreamAsync(cancellationToken));
 });
 
-app.MapGet("/api/artifact/{id}", (string id, ArtifactDownloadCache artifactCache) =>
+app.MapGet("/api/artifacts/{id}", IResult (string id, ArtifactDownloadCache artifactCache) =>
 {
     var artifact = artifactCache.Get(id);
-    return artifact is null ? TypedResults.NotFound() : Results.File(artifact.Content, artifact.ContentType, artifact.FileName);
-});
+    return artifact is null ? TypedResults.NotFound() : TypedResults.File(artifact.Content, artifact.ContentType, artifact.FileName);
+})
+.WithName("DownloadArtifact")
+.Produces<FileContentHttpResult>()
+.ProducesProblem(StatusCodes.Status404NotFound);
 
 app.Run();
