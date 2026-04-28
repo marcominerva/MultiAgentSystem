@@ -9,7 +9,7 @@ namespace MultiAgentSystem.Stores;
 /// so that export tools can render content deterministically without LLM-mediated data transfer.
 /// </summary>
 /// <remarks>
-/// Supports both tabular data and free-form text/markdown content.
+/// Supports tabular data, JSON object lists, and free-form text/markdown content.
 /// Producers call <see cref="StoreAsync"/> to save a result and receive a short ID;
 /// export tools call <see cref="GetAsync"/> with that ID to retrieve the full content.
 /// </remarks>
@@ -26,8 +26,9 @@ public sealed class InMemoryContentStore : IContentStore
         var id = result.ContentId ?? Guid.NewGuid().ToString("N")[..8];
         result.ContentId = id;
 
-        // Serialize Data to JSON for table content so export tools receive a ready-to-use string.
-        var serializedData = result.Data is string data ? data : JsonSerializer.Serialize(result.Data, JsonSerializerOptions.Web);
+        // Text and list payloads are already strings; only table content needs serialization.
+        var serializedData = result.ContentType is ContentTypes.Text or ContentTypes.List
+            ? (string)result.Data : JsonSerializer.Serialize(result.Data, JsonSerializerOptions.Web);
 
         contents[id] = result with { Data = serializedData };
 
@@ -48,7 +49,7 @@ public sealed class InMemoryContentStore : IContentStore
 /// render it deterministically without LLM-mediated data transfer.
 /// </summary>
 /// <remarks>
-/// Supports both tabular data (JSON arrays of homogeneous objects) and free-form text/markdown.
+/// Supports tabular data, JSON object lists, and free-form text/markdown.
 /// Producers call <see cref="StoreAsync"/> to save a <see cref="ToolResult"/> and receive a short ID;
 /// export tools call <see cref="GetAsync"/> with that ID to retrieve the full content.
 /// </remarks>
@@ -59,7 +60,7 @@ public interface IContentStore
     /// and returns the identifier.
     /// </summary>
     /// <remarks>
-    /// For tabular results the <see cref="ToolResult.Data"/> payload is serialized to JSON;
+    /// For structured results the <see cref="ToolResult.Data"/> payload is serialized to JSON;
     /// for text results it is stored as-is.
     /// </remarks>
     Task<string> StoreAsync(ToolResult result);

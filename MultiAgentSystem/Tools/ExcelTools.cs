@@ -15,7 +15,7 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
 {
     [Description("""
         Generates an Excel file (.xlsx).
-        If a contentId is provided, the tool reads tabular data directly from the store - nothing is truncated. Provide columns and optional rules to control layout and conditional formatting.
+        If a contentId is provided, the tool reads tabular data or JSON object lists directly from the store - nothing is truncated. Provide columns and optional rules to control layout and conditional formatting.
         Text content is not supported for Excel export.
         If no contentId is provided, provide headers and rows with the data to include.
         """)]
@@ -23,10 +23,10 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
         [Description("The file name without extension.")] string fileName,
         [Description("The name of the worksheet.")] string sheetName,
         [Description("A brief summary of the generated file content. Do not include download links or references to downloading the file.")] string description,
-        [Description("The Content ID of previously stored tabular data. When provided, the tool reads data from the store and 'headers'/'rows' are ignored.")] string? contentId = null,
+        [Description("The Content ID of previously stored tabular data or JSON object lists. When provided, the tool reads data from the store and 'headers'/'rows' are ignored.")] string? contentId = null,
         [Description("Column definitions for content-based export: which fields to include, display headers, unconditional styles. Required when contentId is provided.")] RenderColumn[]? columns = null,
-        [Description("Optional cell-level formatting rules for content-based export (e.g., highlight prices > 100 in red). Used only when contentId is provided.")] CellRule[]? rules = null,
-        [Description("Optional row-level styling rules (e.g., alternating row colors with 'odd'/'even', or every N-th row). Applied to all cells in matching rows with lower priority than cell-level styles. Used only when contentId is provided.")] RowRule[]? rowRules = null,
+        [Description("Optional cell-level formatting rules for content-based export (e.g., highlight prices > 100 in red). Used only when contentId is provided for table or list content.")] CellRule[]? rules = null,
+        [Description("Optional row-level styling rules (e.g., alternating row colors with 'odd'/'even', or every N-th row). Applied to all cells in matching rows with lower priority than cell-level styles. Used only when contentId is provided for table or list content.")] RowRule[]? rowRules = null,
         [Description("Column headers. Used only when no contentId is provided.")] ExcelCell[]? headers = null,
         [Description("Data rows. Used only when no contentId is provided.")] ExcelRow[]? rows = null)
     {
@@ -57,9 +57,9 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
         var stored = await contentStore.GetAsync(contentId)
             ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
 
-        if (stored.ContentType is not "table")
+        if (stored.ContentType is not ContentTypes.Table and not ContentTypes.List)
         {
-            throw new NotSupportedException($"Excel export is only supported for tabular data. The content with ID '{contentId}' has type '{stored.ContentType}'.");
+            throw new NotSupportedException($"Excel export is only supported for tabular data and JSON object lists. The content with ID '{contentId}' has type '{stored.ContentType}'.");
         }
 
         using var doc = JsonDocument.Parse((string)stored.Data);

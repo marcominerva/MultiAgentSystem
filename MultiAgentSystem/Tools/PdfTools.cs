@@ -39,7 +39,7 @@ public sealed class PdfTools(IHttpClientFactory httpClientFactory, AgentArtifact
             var stored = await contentStore.GetAsync(contentId)
                 ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
 
-            markdownContent = stored.ContentType is "table"
+            markdownContent = stored.ContentType is ContentTypes.Table or ContentTypes.List
                 ? MarkdownTableBuilder.Build((string)stored.Data, title, columns ?? [], rules)
                 : (string)stored.Data;
         }
