@@ -10,15 +10,17 @@ namespace MultiAgentSystem.Stores;
 /// </summary>
 /// <remarks>
 /// Supports tabular data, JSON object lists, and free-form text/markdown content.
-/// Producers call <see cref="StoreAsync"/> to save a result and receive a short ID;
+/// Producers call <see cref="SetAsync"/> to save a result and receive a short ID;
 /// export tools call <see cref="GetAsync"/> with that ID to retrieve the full content.
 /// </remarks>
-public sealed class InMemoryContentStore : IContentStore
+public sealed class InMemoryContentStore(TimeProvider timeProvider) : IContentStore
 {
-    private readonly ConcurrentDictionary<string, ToolResult> contents = new();
+    private static readonly TimeSpan ttl = TimeSpan.FromMinutes(5);
+
+    private readonly ConcurrentDictionary<string, StoredContent> contents = new();
 
     /// <inheritdoc/>
-    public Task<string> StoreAsync(ToolResult result)
+    public Task<string> SetAsync(ToolResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
 
@@ -30,18 +32,40 @@ public sealed class InMemoryContentStore : IContentStore
         var serializedData = result.ContentType is ContentTypes.Text or ContentTypes.List
             ? (string)result.Data : JsonSerializer.Serialize(result.Data, JsonSerializerOptions.Web);
 
-        contents[id] = result with { Data = serializedData };
+        contents[id] = new StoredContent(result with { Data = serializedData }, timeProvider.GetUtcNow().Add(ttl));
 
         return Task.FromResult(id);
     }
 
     /// <inheritdoc/>
     public Task<ToolResult?> GetAsync(string contentId)
-        => Task.FromResult(contents.GetValueOrDefault(contentId));
+    {
+        EvictExpiredEntries();
+        return Task.FromResult(contents.TryGetValue(contentId, out var stored) ? stored.Result : null);
+    }
 
     /// <inheritdoc/>
     public Task<IEnumerable<ToolResult>> GetAllAsync()
-        => Task.FromResult<IEnumerable<ToolResult>>([.. contents.Values]);
+    {
+        EvictExpiredEntries();
+        return Task.FromResult<IEnumerable<ToolResult>>([.. contents.Values.Select(static c => c.Result)]);
+    }
+
+    private void EvictExpiredEntries()
+    {
+        var now = timeProvider.GetUtcNow();
+
+        // Evict every entry older than the TTL to keep the store bounded.
+        foreach (var entry in contents)
+        {
+            if (entry.Value.ExpiresAt <= now)
+            {
+                contents.TryRemove(entry.Key, out _);
+            }
+        }
+    }
+
+    private sealed record StoredContent(ToolResult Result, DateTimeOffset ExpiresAt);
 }
 
 /// <summary>
@@ -50,7 +74,7 @@ public sealed class InMemoryContentStore : IContentStore
 /// </summary>
 /// <remarks>
 /// Supports tabular data, JSON object lists, and free-form text/markdown.
-/// Producers call <see cref="StoreAsync"/> to save a <see cref="ToolResult"/> and receive a short ID;
+/// Producers call <see cref="SetAsync"/> to save a <see cref="ToolResult"/> and receive a short ID;
 /// export tools call <see cref="GetAsync"/> with that ID to retrieve the full content.
 /// </remarks>
 public interface IContentStore
@@ -63,7 +87,7 @@ public interface IContentStore
     /// For structured results the <see cref="ToolResult.Data"/> payload is serialized to JSON;
     /// for text results it is stored as-is.
     /// </remarks>
-    Task<string> StoreAsync(ToolResult result);
+    Task<string> SetAsync(ToolResult result);
 
     /// <summary>
     /// Retrieves a previously stored <see cref="ToolResult"/> by its identifier,

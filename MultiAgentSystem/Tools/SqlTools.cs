@@ -81,7 +81,7 @@ public sealed partial class SqlTools(IOptions<SqlAgentSettings> options, IConten
         var columnNames = results.Count > 0 ? ((IDictionary<string, object>)results[0]).Keys : [];
 
         var toolResult = new ToolResult(results, results.Count, columnNames, description);
-        await contentStore.StoreAsync(toolResult);
+        await contentStore.SetAsync(toolResult);
 
         return toolResult;
     }

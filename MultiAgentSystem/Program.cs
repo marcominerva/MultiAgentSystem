@@ -25,13 +25,14 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true);
 
 // Add services to the container.
-builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+builder.Services.AddSingleton(TimeProvider.System);
 
-builder.Services.AddHttpClient();
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
 var openAISettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(builder.Configuration, "AzureOpenAI")!;
 _ = builder.Services.ConfigureAndGet<SqlAgentSettings>(builder.Configuration, nameof(SqlAgentSettings))!;
 
+builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("OpenAI").AddHttpMessageHandler(_ => new TraceHttpClientHandler());
 
 builder.Services.AddChatClient(services =>
@@ -51,9 +52,14 @@ builder.Services.AddScoped<UserContextProvider>();
 builder.Services.AddScoped<SqlAgentContextProvider>();
 builder.Services.AddScoped<ExportingContextProvider>();
 
+// This is the scoped stored used to keep track of the Artifacts produced during the execution of an agent, so they can be returned in the response or stored in the cache at the end of the execution.
 builder.Services.AddScoped<AgentArtifactStore>();
 
-builder.Services.AddSingleton<ArtifactDownloadCache>();
+// This is the cache used to store Artifacts for download after the agent execution is completed. We register it as a singleton so the stored artifacts are shared across all sessions and conversations,
+// and can be retrieved by contentId even after the conversation that produced them has ended.
+// In a production system, you would likely want to implement a more robust cache that stores the artifacts in a persistent storage and implements eviction policies,
+// instead of keeping them in memory.
+builder.Services.AddSingleton<IArtifactDownloadCache, InMemoryArtifactDownloadCache>();
 
 // Register the content store and its provider as singletons, so the stored content is shared across all sessions and conversations, and can be referenced by contentId over multiple turns and by different agents.
 builder.Services.AddSingleton<ContentStoreContextProvider>();
@@ -267,7 +273,7 @@ app.MapPost("/api/chat", async Task<IResult> (HttpContext httpContext, ChatReque
 .ProducesValidationProblem();
 
 app.MapPost("/api/chat/stream", (ChatRequest request, [FromKeyedServices("MainAgent")] AIAgent agent, [FromKeyedServices("MainAgent")] AgentSessionStore store,
-    AgentArtifactStore artifactStore, ArtifactDownloadCache artifactCache, LinkGenerator linkGenerator, HttpContext httpContext, CancellationToken cancellationToken) =>
+    AgentArtifactStore artifactStore, IArtifactDownloadCache artifactCache, LinkGenerator linkGenerator, HttpContext httpContext, CancellationToken cancellationToken) =>
 {
     async IAsyncEnumerable<SseItem<string>> StreamAsync([EnumeratorCancellation] CancellationToken ct)
     {
@@ -292,7 +298,7 @@ app.MapPost("/api/chat/stream", (ChatRequest request, [FromKeyedServices("MainAg
         {
             // If an Artifact was produced, store it in the cache and return the URL in a separate metadata event, so the client can download it with a separate request.
             var artifactId = Guid.NewGuid().ToString("N");
-            artifactCache.Store(artifactId, artifactStore.Artifacts[0]);
+            await artifactCache.SetAsync(artifactId, artifactStore.Artifacts[0], ct);
             artifactUrl = linkGenerator.GetUriByName(httpContext, "DownloadArtifact", new { id = artifactId });
         }
 
@@ -304,9 +310,9 @@ app.MapPost("/api/chat/stream", (ChatRequest request, [FromKeyedServices("MainAg
     return TypedResults.ServerSentEvents(StreamAsync(cancellationToken));
 });
 
-app.MapGet("/api/artifacts/{id}", IResult (string id, ArtifactDownloadCache artifactCache) =>
+app.MapGet("/api/artifacts/{id}", async Task<IResult> (string id, IArtifactDownloadCache artifactCache, CancellationToken cancellationToken) =>
 {
-    var artifact = artifactCache.Get(id);
+    var artifact = await artifactCache.GetAsync(id, cancellationToken);
     return artifact is null ? TypedResults.NotFound() : TypedResults.File(artifact.Content, artifact.ContentType, artifact.FileName);
 })
 .WithName("DownloadArtifact")
