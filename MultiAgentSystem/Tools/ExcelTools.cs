@@ -27,14 +27,15 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
         [Description("Optional cell-level formatting rules for content-based export (e.g., highlight prices > 100 in red). Used only when contentId is provided for table or list content.")] CellRule[]? rules = null,
         [Description("Optional row-level styling rules (e.g., alternating row colors with 'odd'/'even', or every N-th row). Applied to all cells in matching rows with lower priority than cell-level styles. Used only when contentId is provided for table or list content.")] RowRule[]? rowRules = null,
         [Description("Column headers. Used only when no contentId is provided.")] ExcelCell[]? headers = null,
-        [Description("Data rows. Used only when no contentId is provided.")] ExcelRow[]? rows = null)
+        [Description("Data rows. Used only when no contentId is provided.")] ExcelRow[]? rows = null,
+        CancellationToken cancellationToken = default)
     {
         using var workbook = new XLWorkbook();
         var worksheet = workbook.Worksheets.Add(string.IsNullOrWhiteSpace(sheetName) ? "Sheet1" : sheetName);
 
         if (!string.IsNullOrWhiteSpace(contentId))
         {
-            await GenerateFromContentTableAsync(worksheet, contentId, columns ?? [], rules, rowRules);
+            await GenerateFromContentTableAsync(worksheet, contentId, columns ?? [], rules, rowRules, cancellationToken);
         }
         else
         {
@@ -51,9 +52,9 @@ public sealed class ExcelTools(AgentArtifactStore artifactStore, IContentStore c
         return description;
     }
 
-    private async Task GenerateFromContentTableAsync(IXLWorksheet worksheet, string contentId, RenderColumn[] columns, CellRule[]? cellRules, RowRule[]? rowRules)
+    private async Task GenerateFromContentTableAsync(IXLWorksheet worksheet, string contentId, RenderColumn[] columns, CellRule[]? cellRules, RowRule[]? rowRules, CancellationToken cancellationToken)
     {
-        var stored = await contentStore.GetAsync(contentId)
+        var stored = await contentStore.GetAsync(contentId, cancellationToken)
             ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
 
         if (stored.ContentType is not ContentTypes.Table and not ContentTypes.List)

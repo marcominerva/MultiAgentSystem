@@ -30,13 +30,14 @@ public sealed class PdfTools(IHttpClientFactory httpClientFactory, AgentArtifact
         [Description("Column definitions for content-based export: which fields to include, display headers, unconditional styles. Required when contentId refers to tabular data.")] RenderColumn[]? columns = null,
         [Description("Optional cell-level formatting rules for content-based export (bold/italic only in PDF). Used only when contentId is provided with tabular data.")] CellRule[]? rules = null,
         [Description("Optional title displayed above the table when using contentId with tabular data.")] string? title = null,
-        [Description("Markdown content for narrative/free-form documents. Used only when no contentId is provided.")] string? content = null)
+        [Description("Markdown content for narrative/free-form documents. Used only when no contentId is provided.")] string? content = null,
+        CancellationToken cancellationToken = default)
     {
         string markdownContent;
 
         if (!string.IsNullOrWhiteSpace(contentId))
         {
-            var stored = await contentStore.GetAsync(contentId)
+            var stored = await contentStore.GetAsync(contentId, cancellationToken)
                 ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
 
             markdownContent = stored.ContentType is ContentTypes.Table or ContentTypes.List

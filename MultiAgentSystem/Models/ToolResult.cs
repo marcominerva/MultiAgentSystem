@@ -17,6 +17,20 @@ public record class ToolResult
     public string ContentId { get; set; } = Guid.NewGuid().ToString("N")[..8];
 
     /// <summary>
+    /// The UTC timestamp when this result was produced. Useful to order results and apply
+    /// retention policies (TTL, sliding windows) in the content store.
+    /// </summary>
+    [Description("The UTC timestamp when this result was produced.")]
+    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// The name of the tool that produced this result (e.g. <c>ExecuteQueryAsync</c>).
+    /// Useful for diagnostics, auditing, and to disambiguate results in the content store.
+    /// </summary>
+    [Description("The name of the tool that produced this result.")]
+    public string? ToolName { get; init; }
+
+    /// <summary>
     /// A brief description of the data or purpose of the result, useful for export tools to provide context when rendering content.
     /// </summary>
     public string Description { get; init; }

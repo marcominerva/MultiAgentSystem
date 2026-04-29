@@ -20,9 +20,10 @@ public sealed class InMemoryContentStore(TimeProvider timeProvider) : IContentSt
     private readonly ConcurrentDictionary<string, StoredContent> contents = new();
 
     /// <inheritdoc/>
-    public Task<string> SetAsync(ToolResult result)
+    public Task<string> SetAsync(ToolResult result, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(result);
+        cancellationToken.ThrowIfCancellationRequested();
 
         // If the producer provided a ContentId, use it; otherwise generate a new short ID.
         var id = result.ContentId ?? Guid.NewGuid().ToString("N")[..8];
@@ -38,17 +39,36 @@ public sealed class InMemoryContentStore(TimeProvider timeProvider) : IContentSt
     }
 
     /// <inheritdoc/>
-    public Task<ToolResult?> GetAsync(string contentId)
+    public Task<ToolResult?> GetAsync(string contentId, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         EvictExpiredEntries();
         return Task.FromResult(contents.TryGetValue(contentId, out var stored) ? stored.Result : null);
     }
 
     /// <inheritdoc/>
-    public Task<IEnumerable<ToolResult>> GetAllAsync()
+    public Task<IEnumerable<ToolResult>> GetAllAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         EvictExpiredEntries();
         return Task.FromResult<IEnumerable<ToolResult>>([.. contents.Values.Select(static c => c.Result)]);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveAsync(string contentId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(contents.TryRemove(contentId, out _));
+    }
+
+    /// <inheritdoc/>
+    public Task ClearAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        contents.Clear();
+        return Task.CompletedTask;
     }
 
     private void EvictExpiredEntries()
@@ -87,16 +107,28 @@ public interface IContentStore
     /// For structured results the <see cref="ToolResult.Data"/> payload is serialized to JSON;
     /// for text results it is stored as-is.
     /// </remarks>
-    Task<string> SetAsync(ToolResult result);
+    Task<string> SetAsync(ToolResult result, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Retrieves a previously stored <see cref="ToolResult"/> by its identifier,
     /// or <see langword="null"/> if the identifier is not found.
     /// </summary>
-    Task<ToolResult?> GetAsync(string contentId);
+    Task<ToolResult?> GetAsync(string contentId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Asynchronously retrieves all tool results. This is necessary so that the LLM knows what content is available in the store and can reference it by ID, since the LLM doesn't have memory of previous interactions and can't be expected to know what content IDs exist.
     /// </summary>
-    Task<IEnumerable<ToolResult>> GetAllAsync();
+    Task<IEnumerable<ToolResult>> GetAllAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes the entry identified by <paramref name="contentId"/> from the store.
+    /// </summary>
+    /// <returns><see langword="true"/> if an entry was found and removed; otherwise, <see langword="false"/>.</returns>
+    Task<bool> RemoveAsync(string contentId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes all entries from the store. Typically invoked when starting a new conversation
+    /// to discard previously generated content and reclaim memory.
+    /// </summary>
+    Task ClearAsync(CancellationToken cancellationToken = default);
 }

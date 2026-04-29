@@ -13,7 +13,7 @@ public class ContentStoreContextProvider(IContentStore contentStore) : MessageAI
 {
     protected override async ValueTask<IEnumerable<ChatMessage>> ProvideMessagesAsync(InvokingContext context, CancellationToken cancellationToken = default)
     {
-        var results = await contentStore.GetAllAsync();
+        var results = await contentStore.GetAllAsync(cancellationToken);
         var summaries = results.Select(r => r.ToString());
 
         if (!summaries.Any())

@@ -22,10 +22,11 @@ public sealed class WordTools(AgentArtifactStore artifactStore, IContentStore co
         [Description("Column definitions for content-based export: which fields to include, display headers, unconditional styles. Required when contentId refers to tabular data.")] RenderColumn[]? columns = null,
         [Description("Optional cell-level formatting rules for content-based export (bold/italic only in Word). Used only when contentId is provided with tabular data.")] CellRule[]? rules = null,
         [Description("Optional title displayed above the table when using contentId with tabular data.")] string? title = null,
-        [Description("Markdown content for narrative/free-form documents. Used only when no contentId is provided.")] string? content = null)
+        [Description("Markdown content for narrative/free-form documents. Used only when no contentId is provided.")] string? content = null,
+        CancellationToken cancellationToken = default)
     {
         var markdownContent = !string.IsNullOrWhiteSpace(contentId)
-            ? await BuildFromStoreAsync(contentId, title, columns ?? [], rules)
+            ? await BuildFromStoreAsync(contentId, title, columns ?? [], rules, cancellationToken)
             : content ?? string.Empty;
 
         var markdown = MarkdownSource.FromMarkdownString(markdownContent);
@@ -38,9 +39,9 @@ public sealed class WordTools(AgentArtifactStore artifactStore, IContentStore co
         return description;
     }
 
-    private async Task<string> BuildFromStoreAsync(string contentId, string? title, RenderColumn[] columns, CellRule[]? rules)
+    private async Task<string> BuildFromStoreAsync(string contentId, string? title, RenderColumn[] columns, CellRule[]? rules, CancellationToken cancellationToken)
     {
-        var stored = await contentStore.GetAsync(contentId)
+        var stored = await contentStore.GetAsync(contentId, cancellationToken)
             ?? throw new InvalidOperationException($"No content found for Content ID '{contentId}'.");
 
         return stored.ContentType is ContentTypes.Table or ContentTypes.List
