@@ -1,5 +1,4 @@
 ﻿using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
 using MultiAgentSystem.Models;
 using MultiAgentSystem.Stores;
 
@@ -9,24 +8,28 @@ namespace MultiAgentSystem.ContextProviders;
 /// Injects a summary of all stored <see cref="ToolResult"/> items into the conversation context
 /// so the LLM can reference content IDs across turns, even after chat history reduction.
 /// </summary>
-public class ContentStoreContextProvider(IContentStore contentStore) : MessageAIContextProvider
+public class ContentStoreContextProvider(IContentStore contentStore) : AIContextProvider
 {
-    protected override async ValueTask<IEnumerable<ChatMessage>> ProvideMessagesAsync(InvokingContext context, CancellationToken cancellationToken = default)
+    protected override async ValueTask<AIContext> ProvideAIContextAsync(InvokingContext context, CancellationToken cancellationToken = default)
     {
         var results = await contentStore.GetAllAsync(cancellationToken);
-        var summaries = results.Select(r => r.ToString());
+        var summaries = results.Select(r => r.ToString()).ToList();
 
-        if (!summaries.Any())
+        if (summaries.Count == 0)
         {
-            return [];
+            return new AIContext();
         }
 
-        var message = $"""
-            The following stored results are available for export or further processing:
-            {string.Join(Environment.NewLine, summaries)}
-            When the user asks to export or reference previous data, if available use the corresponding ContentId.
-            """;
+        var aiContext = new AIContext()
+        {
+            Instructions = $"""
+                ## Content Store Information:
+                The following stored results are available for export or further processing:
+                {string.Join(Environment.NewLine, summaries)}
+                When the user asks to export or reference previous data, if available use the corresponding ContentId.
+                """
+        };
 
-        return [new(ChatRole.User, message)];
+        return aiContext;
     }
 }

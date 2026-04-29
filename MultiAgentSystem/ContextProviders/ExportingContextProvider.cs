@@ -1,15 +1,20 @@
 ﻿using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
 
 namespace MultiAgentSystem.ContextProviders;
 
-public class ExportingContextProvider : MessageAIContextProvider
+public class ExportingContextProvider : AIContextProvider
 {
-    protected override ValueTask<IEnumerable<ChatMessage>> ProvideMessagesAsync(InvokingContext context, CancellationToken cancellationToken = default)
+    protected override ValueTask<AIContext> ProvideAIContextAsync(InvokingContext context, CancellationToken cancellationToken = default)
     {
         // Get relevant information from a knowledge base or other source. Here we hardcode it for simplicity.
-        return ValueTask.FromResult<IEnumerable<ChatMessage>>(
-            [new(ChatRole.User, "If there are currencies in the data, define them as currency in € format. All currencies must be expressed in Euros, including the related labels.")]
-        );
+        var aiContext = new AIContext()
+        {
+            Instructions = """
+                ## Exporting Rules:            
+                - If there are currencies in the data, define them as currency in € format. All currencies must be expressed in Euros, including the related labels.
+                """
+        };
+
+        return ValueTask.FromResult(aiContext);
     }
 }

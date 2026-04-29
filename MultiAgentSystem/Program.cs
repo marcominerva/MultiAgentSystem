@@ -190,7 +190,7 @@ builder.Services.AddAIAgent("MainAgent", (services, key) =>
                 sqlAgent.AsAIFunction(),
                 exportAgent.AsAIFunction()]
         },
-        //AIContextProviders = [services.GetRequiredService<UserContextProvider>()],
+        AIContextProviders = [services.GetRequiredService<UserContextProvider>()],
         ChatHistoryProvider = chatHistoryProvider
     },
     loggerFactory: loggerFactory,
