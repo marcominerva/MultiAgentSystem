@@ -8,19 +8,13 @@ window.scrollToBottom = (element) => {
     }
 };
 
-window.downloadFile = async (url) => {
-    const response = await fetch(url);
-    if (!response.ok) return;
-
-    const blob = await response.blob();
-    const contentDisposition = response.headers.get('content-disposition') ?? '';
-    const fileNameMatch = contentDisposition.match(/filename\*?=(?:UTF-8''|")?([^;"]+)/i);
-    const fileName = fileNameMatch ? decodeURIComponent(fileNameMatch[1].replace(/"/g, '')) : 'download';
-
+window.downloadFileFromStream = async (fileName, contentType, streamRef) => {
+    const arrayBuffer = await streamRef.arrayBuffer();
+    const blob = new Blob([arrayBuffer], { type: contentType || 'application/octet-stream' });
     const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = objectUrl;
-    a.download = fileName;
+    a.download = fileName || 'download';
     a.click();
     URL.revokeObjectURL(objectUrl);
 };

@@ -1,13 +1,14 @@
 ﻿@page "/"
 @rendermode InteractiveServer
 
-@using System.Text.Json
-@using System.Net.Mime
-@using MultiAgentSystem.Models
+@using Microsoft.Agents.AI
+@using Microsoft.Agents.AI.Hosting
+@using MultiAgentSystem.AgentArtifacts
+
+@implements IAsyncDisposable
 
 @inject IJSRuntime JS
-@inject NavigationManager NavigationManager
-@inject IHttpClientFactory HttpClientFactory
+@inject IServiceScopeFactory ScopeFactory
 
 <PageTitle>Chat</PageTitle>
 
@@ -22,19 +23,8 @@
                         @((MarkupString)FormatMessage(message.Text))
                         <div class="message-actions">
                             <button class="btn-copy" title="Copy" @onclick="() => CopyMessageAsync(message.Text, index)">
-                                @if (copiedMessageIndex == index)
-                                {
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
-                                        <polyline points="20 6 9 17 4 12"/>
-                                    </svg>
-                                }
-                                else
-                                {
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
-                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                                    </svg>
-                                }
+                                <Icon Type="@(copiedMessageIndex == index ? "check" : "copy")"
+                                      StrokeWidth="@(copiedMessageIndex == index ? "2.5" : "2")" />
                             </button>
                         </div>
                     </div>
@@ -84,7 +74,6 @@
 
 @code {
     private sealed record ChatMessage(string Text, bool IsUser);
-    private sealed record StreamMetadata(string ConversationId, int TokenCount, string? ArtifactUrl);
 
     private readonly List<ChatMessage> messages = [];
     private string inputText = string.Empty;
@@ -94,6 +83,7 @@
     private ElementReference messagesContainer;
     private ElementReference inputElement;
     private int? copiedMessageIndex;
+    private CancellationTokenSource? streamingCancellationTokenSource;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -122,6 +112,7 @@
 
     private async Task NewConversationAsync()
     {
+        streamingCancellationTokenSource?.Cancel();
         messages.Clear();
         conversationId = Guid.NewGuid().ToString("N");
         streamingText = string.Empty;
@@ -147,49 +138,53 @@
         await Task.Yield();
         await ScrollToBottomAsync();
 
+        streamingCancellationTokenSource = new CancellationTokenSource();
+        var cancellationToken = streamingCancellationTokenSource.Token;
+
+        // Each user turn runs in its own DI scope, mirroring how ASP.NET Core creates a scope per HTTP request.
+        // This matters because services like AgentArtifactStore and the AIAgent itself are registered as Scoped:
+        // resolving them straight from the page would tie their lifetime to the Blazor circuit (effectively a
+        // singleton for the whole session), causing artifacts and agent state to leak across messages.
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+
+        var agent = services.GetRequiredKeyedService<AIAgent>("MainAgent");
+        var sessionStore = services.GetRequiredKeyedService<AgentSessionStore>("MainAgent");
+        var artifactStore = services.GetRequiredService<AgentArtifactStore>();
+
         try
         {
-            var baseUri = NavigationManager.BaseUri.TrimEnd('/');
-            var url = $"{baseUri}/api/chat/stream";
+            var session = await sessionStore.GetSessionAsync(agent, conversationId, cancellationToken);
 
-            using var http = HttpClientFactory.CreateClient();
-            using var request = new HttpRequestMessage(HttpMethod.Post, url);
-            request.Headers.Accept.Add(new(MediaTypeNames.Text.EventStream));
-            request.Content = JsonContent.Create(new ChatRequest(conversationId, text), options: JsonSerializerOptions.Web);
-
-            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
-
-            await using var stream = await response.Content.ReadAsStreamAsync();
-
-            await foreach (var item in SseParser.Create(stream).EnumerateAsync())
+            await foreach (var update in agent.RunStreamingAsync(text, session, cancellationToken: cancellationToken))
             {
-                if (item.EventType == "delta")
+                if (string.IsNullOrEmpty(update.Text))
                 {
-                    streamingText += item.Data;
+                    continue;
+                }
 
-                    StateHasChanged();
-                    await ScrollToBottomAsync();
-                }
-                else if (item.EventType == "metadata")
-                {
-                    try
-                    {
-                        var meta = JsonSerializer.Deserialize<StreamMetadata>(item.Data, JsonSerializerOptions.Web);
-                        if (meta is not null)
-                        {
-                            conversationId = meta.ConversationId;
-                            if (!string.IsNullOrEmpty(meta.ArtifactUrl))
-                            {
-                                await JS.InvokeVoidAsync("downloadFile", meta.ArtifactUrl);
-                            }
-                        }
-                    }
-                    catch { /* ignore parse errors */ }
-                }
+                streamingText += update.Text;
+
+                StateHasChanged();
+                await ScrollToBottomAsync();
             }
 
+            await sessionStore.SaveSessionAsync(agent, conversationId, session, cancellationToken);
+
             messages.Add(new ChatMessage(streamingText, false));
+
+            if (artifactStore.HasArtifacts)
+            {
+                // Stream artifact bytes straight to the browser via JS interop: no temporary URL or
+                // server-side cache required, because the file already lives in this process' memory.
+                var artifact = artifactStore.Artifacts[0];
+                using var streamRef = new DotNetStreamReference(new MemoryStream(artifact.Content, writable: false));
+                await JS.InvokeVoidAsync("downloadFileFromStream", cancellationToken, artifact.FileName, artifact.ContentType, streamRef);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Page navigated away or new conversation started; nothing else to do.
         }
         catch (Exception ex)
         {
@@ -200,11 +195,23 @@
             streamingText = string.Empty;
             isStreaming = false;
 
+            streamingCancellationTokenSource?.Dispose();
+            streamingCancellationTokenSource = null;
+
             StateHasChanged();
 
             await ScrollToBottomAsync();
             await FocusInputAsync();
         }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        streamingCancellationTokenSource?.Cancel();
+        streamingCancellationTokenSource?.Dispose();
+        streamingCancellationTokenSource = null;
+
+        return ValueTask.CompletedTask;
     }
 
     private async Task ScrollToBottomAsync()

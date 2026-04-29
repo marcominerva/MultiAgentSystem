@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
-using MultiAgentSystem.AgentArtifacts;
 
-namespace MultiAgentSystem.Stores;
+namespace MultiAgentSystem.AgentArtifacts;
 
 /// <summary>
 /// Singleton in-memory cache for temporary artifact downloads produced during streaming agent runs.
@@ -11,7 +10,8 @@ public sealed class ArtifactDownloadCache
 {
     private readonly ConcurrentDictionary<string, CachedArtifact> cache = new();
 
-    public void Store(string id, AgentArtifact artifact) => cache[id] = new CachedArtifact(artifact, DateTimeOffset.UtcNow.AddMinutes(5));
+    public void Store(string id, AgentArtifact artifact)
+        => cache[id] = new CachedArtifact(artifact, DateTimeOffset.UtcNow.AddMinutes(5));
 
     public AgentArtifact? Get(string id)
     {
