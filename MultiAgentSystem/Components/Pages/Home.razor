@@ -13,7 +13,7 @@
 
 <div class="chat-container">
     <div class="chat-messages" @ref="messagesContainer">
-        @foreach (var (index, message) in messages.Index()))
+        @foreach (var (index, message) in messages.Index())
         {
             <div class="message @(message.IsUser ? "message-user" : "message-assistant")">
                 @if (!message.IsUser)
