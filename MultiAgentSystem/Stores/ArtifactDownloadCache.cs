@@ -9,18 +9,15 @@ namespace MultiAgentSystem.Stores;
 /// </summary>
 public sealed class ArtifactDownloadCache
 {
-    private readonly ConcurrentDictionary<string, CachedArtifact> _cache = new();
+    private readonly ConcurrentDictionary<string, CachedArtifact> cache = new();
 
-    public void Store(string id, AgentArtifact artifact)
-    {
-        _cache[id] = new CachedArtifact(artifact, DateTimeOffset.UtcNow.AddMinutes(5));
-    }
+    public void Store(string id, AgentArtifact artifact) => cache[id] = new CachedArtifact(artifact, DateTimeOffset.UtcNow.AddMinutes(5));
 
     public AgentArtifact? Get(string id)
     {
-        if (_cache.TryGetValue(id, out var cached) && cached.ExpiresAt > DateTimeOffset.UtcNow)
+        if (cache.TryGetValue(id, out var cached) && cached.ExpiresAt > DateTimeOffset.UtcNow)
         {
-            _cache.TryRemove(id, out _);
+            cache.TryRemove(id, out _);
             return cached.Artifact;
         }
 
